@@ -1,0 +1,10 @@
+{
+  "name": "todomvc-csp.js",
+  "version": "0.0.0",
+  "dependencies": {
+    "todomvc-common": "~0.1.4",
+    "underscore": "~1.5.2",
+    "jquery": "~1.10.2",
+    "csp.js": "~0.2.3"
+  }
+}
