@@ -101,37 +101,41 @@ var app = app || {};
     var events = CSP.merge([
       listenForNewTodo(els.newTodos),
       listenForDeleteTodo(els.todoList),
-      listenForToggleOne(els.todoList),
       listenForToggleAll(els.toggleAll),
       listenForClearCompleted(els.todoList)
     ]);
 
     CSP.go(function*() {
       var items = {};
-      var val, item;
+      var val, item, i, len;
 
       while (true) {
         val = yield CSP.take(control);
 
         switch (val.action) {
           case 'createItem':
-            item = items[val.item.id] = $(itemTemplate(val.item));
-            els.todoList.prepend(item);
+            item = items[val.item.id] = createTodoItemUI(val.item);
+            CSP.pipe(item.events, events);
+            els.todoList.prepend(item.el);
             els.newTodos.val('');
             break;
 
           case 'deleteItems':
-            _.each(val.ids, function(id) {
-              $(items[id]).remove();
-            });
+            for (i = 0, len = val.ids.length; i < len; i++) {
+              item = items[val.ids[i]];
+              delete items[val.ids[i]];
+              yield CSP.put(item.control, {action: 'delete'});
+            }
             break;
 
           case 'setItemsStatus':
-            _.each(val.ids, function(id) {
-              var item = items[id];
-              $(item).find('.toggle').prop('checked', val.completed);
-              $(item).toggleClass('completed', val.completed);
-            });
+            for (i = 0, len = val.ids.length; i < len; i++) {
+              item = items[val.ids[i]];
+              yield CSP.put(item.control, {
+                action: 'setStatus',
+                completed: val.completed
+              });
+            }
             break;
         }
       }
@@ -155,28 +159,6 @@ var app = app || {};
     });
   }
 
-  function listenForDeleteTodo(todoListEl) {
-    var events = app.helpers.domEvents(todoListEl, 'click', '.destroy');
-
-    return CSP.mapPull(events, function(event) {
-      return {
-        action: 'deleteTodo',
-        id: $(event.currentTarget).closest('li').data('id')
-      };
-    });
-  }
-
-  function listenForToggleOne(todoListEl) {
-    var events = app.helpers.domEvents(todoListEl, 'click', '.toggle');
-
-    return CSP.mapPull(events, function(event) {
-      return {
-        action: 'toggleOne',
-        id: $(event.currentTarget).closest('li').data('id')
-      };
-    });
-  }
-
   function listenForToggleAll(toggleAllEl) {
     var events = app.helpers.domEvents(toggleAllEl, 'click');
 
@@ -184,6 +166,59 @@ var app = app || {};
       return {
         action: 'toggleAll',
         completed: $(event.currentTarget).prop('checked')
+      };
+    });
+  }
+
+  function createTodoItemUI(item) {
+    var el = $(itemTemplate(item));
+    var control = CSP.chan();
+    var events = CSP.merge([
+      listenForToggleOne(el),
+      listenForDeleteTodo(el)
+    ]);
+
+    CSP.go(function*() {
+      var val;
+
+      while (true) {
+        val = yield CSP.take(control);
+
+        switch(val.action) {
+          case 'delete':
+            el.remove();
+            break;
+
+          case 'setStatus':
+            el.find('.toggle').prop('checked', val.completed);
+            el.toggleClass('completed', val.completed);
+            break;
+        }
+      }
+    });
+
+    return {control: control, events: events, el: el};
+  }
+
+  function listenForToggleOne(todoItemEl) {
+    var events = app.helpers.domEvents(todoItemEl, 'click', '.toggle');
+
+    return CSP.mapPull(events, function(event) {
+
+      return {
+        action: 'toggleOne',
+        id: todoItemEl.data('id')
+      };
+    });
+  }
+
+  function listenForDeleteTodo(todoItemEl) {
+    var events = app.helpers.domEvents(todoItemEl, 'click', '.destroy');
+
+    return CSP.mapPull(events, function(event) {
+      return {
+        action: 'deleteTodo',
+        id: todoItemEl.data('id')
       };
     });
   }
