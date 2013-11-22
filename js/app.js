@@ -50,7 +50,7 @@ var app = app || {};
 
             yield CSP.put(todoListUI, {
               action: 'setItemsStatus',
-              ids: [todo.id],
+              items: [todo],
               completed: todo.completed
             });
             break;
