@@ -13,33 +13,51 @@ var app = app || {};
     var footer = CSP.chan();
     var uiEvents = CSP.chan();
 
-    var remaining = 0;
-    var completed = 0;
-
     CSP.go(function*() {
+      var todos = {};
+      var counter = 0;
+      var event, id, todo, selected, completed, i, len;
+
       while (true) {
-        var event = yield CSP.take(uiEvents);
+        event = yield CSP.take(uiEvents);
 
         switch (event.action) {
           case 'newTodo':
-            remaining++;
-            yield CSP.put(todoList, {action: 'createItem', item: event.value});
+            id = counter++;
+            todo = todos[id] = {
+              id: id,
+              title: event.title,
+              completed: false
+            };
+            yield CSP.put(todoList, {action: 'createItem', item: todo});
             break;
 
           case 'deleteTodo':
-            remaining--;
-            yield CSP.put(todoList, {action: 'deleteItem', el: event.value});
+            delete todo[event.id];
+            yield CSP.put(todoList, {action: 'deleteItem', id: event.id});
             break;
 
           case 'toggleAll':
-            yield CSP.put(todoList, {action: 'toggleAll'});
+            selected = _.where(_.values(todos), {completed: !event.completed});
+
+            for (i = 0, len = selected.length; i < len; i++) {
+              selected[i].completed = event.completed;
+
+              yield CSP.put(todoList, {
+                action: 'setItemStatus',
+                id: selected[i].id,
+                completed: event.completed
+              });
+            }
             break;
         }
 
+        completed = _.where(_.values(todos), {completed: true});
+
         yield CSP.put(footer, {
           action: 'updateStats',
-          remaining: remaining,
-          completed: completed
+          remaining: _.size(todos) - _.size(completed),
+          completed: _.size(completed)
         });
       }
     });
@@ -60,21 +78,27 @@ var app = app || {};
     ]);
 
     CSP.go(function*() {
+      var items = {};
+      var val, item;
+
       while (true) {
-        var val = yield CSP.take(control);
+        val = yield CSP.take(control);
 
         switch (val.action) {
           case 'createItem':
-            var item = itemTemplate({
-              completed: false,
-              title: val.item
-            });
-            els.todoList.append(item);
+            item = items[val.item.id] = $(itemTemplate(val.item));
+            els.todoList.prepend(item);
             els.newTodos.val('');
             break;
 
           case 'deleteItem':
-            $(val.el).remove();
+            $(items[val.id]).remove();
+            break;
+
+          case 'setItemStatus':
+            $(items[val.id]).
+              find('.toggle').
+              prop('checked', val.completed);
             break;
         }
       }
@@ -93,7 +117,7 @@ var app = app || {};
     events = CSP.mapPull(events, function(event) {
       return {
         action: 'newTodo',
-        value: $(event.currentTarget).val()
+        title: $(event.currentTarget).val()
       };
     });
 
@@ -106,7 +130,7 @@ var app = app || {};
     events = CSP.mapPull(events, function(event) {
       return {
         action: 'deleteTodo',
-        value: $(event.currentTarget).closest('li')
+        id: $(event.currentTarget).closest('li').data('id')
       };
     });
 
@@ -119,7 +143,7 @@ var app = app || {};
     events = CSP.mapPull(events, function(event) {
       return {
         action: 'toggleAll',
-        value: $(event.currentTarget).val()
+        completed: $(event.currentTarget).prop('checked')
       };
     });
 
