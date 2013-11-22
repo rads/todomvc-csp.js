@@ -17,6 +17,7 @@
         <label for="toggle-all">Mark all as complete</label>
         <ul id="todo-list"></ul>
       </section>
+      <footer id="footer"></footer>
     </section>
     <footer id="info">
       <p>Double-click to edit a todo</p>
@@ -34,23 +35,21 @@
       </li>
     </script>
     <script type="text/template" id="stats-template">
-      <footer id="footer">
-        <span id="todo-count"><strong><%= remaining %></strong> <%= remaining === 1 ? 'item' : 'items' %> left</span>
-        <ul id="filters">
-          <li>
-            <a class="selected" href="#/">All</a>
-          </li>
-          <li>
-            <a href="#/active">Active</a>
-          </li>
-          <li>
-            <a href="#/completed">Completed</a>
-          </li>
-        </ul>
-        <% if (completed) { %>
-        <button id="clear-completed">Clear completed (<%= completed %>)</button>
-        <% } %>
-      </footer>
+      <span id="todo-count"><strong><%= remaining %></strong> <%= remaining === 1 ? 'item' : 'items' %> left</span>
+      <ul id="filters">
+        <li>
+          <a class="selected" href="#/">All</a>
+        </li>
+        <li>
+          <a href="#/active">Active</a>
+        </li>
+        <li>
+          <a href="#/completed">Completed</a>
+        </li>
+      </ul>
+      <% if (completed) { %>
+      <button id="clear-completed">Clear completed (<%= completed %>)</button>
+      <% } %>
     </script>
     <script src="bower_components/todomvc-common/base.js"></script>
     <script src="bower_components/jquery/jquery.js"></script>
