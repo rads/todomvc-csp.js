@@ -149,7 +149,10 @@ var app = app || {};
         switch (val.action) {
           case 'createItems':
             yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
-            if (val.clearInput) els.newTodos.val('');
+            if (val.clearInput) {
+              els.toggleAll.prop('checked', false);
+              els.newTodos.val('');
+            }
             break;
 
           case 'deleteItems':
@@ -254,6 +257,8 @@ var app = app || {};
     ]);
 
     CSP.pipe(listenForEditEvents(el), control);
+
+    if (item.completed) $(el).addClass('completed');
 
     CSP.go(function*() {
       var val, title;
