@@ -96,10 +96,16 @@ var app = app || {};
             }
 
             yield CSP.put(todoListUI, {
-              action: 'filter',
+              action: 'setFilter',
               items: selected,
               filter: event.filter
             });
+
+            yield CSP.put(footerUI, {
+              action: 'setFilter',
+              filter: event.filter
+            });
+
             break;
         }
 
@@ -160,7 +166,7 @@ var app = app || {};
             }
             break;
 
-          case 'filter':
+          case 'setFilter':
             filter = val.filter;
             yield CSP.take(deleteItems(items, _.keys(items)));
             yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
@@ -330,8 +336,11 @@ var app = app || {};
     ]);
 
     CSP.go(function*() {
+      var filter = null;
+      var val;
+
       while (true) {
-        var val = yield CSP.take(control);
+        val = yield CSP.take(control);
 
         switch (val.action) {
           case 'updateStats':
@@ -340,16 +349,28 @@ var app = app || {};
               show().
               html('').
               append(statsTemplate(stats));
+            setSelectedFilterLink(els.footer, filter);
             break;
 
           case 'hide':
             els.footer.hide();
+            break;
+
+          case 'setFilter':
+            filter = val.filter;
+            setSelectedFilterLink(els.footer, filter);
             break;
         }
       }
     });
 
     return {control: control, events: events};
+  }
+
+  function setSelectedFilterLink(footerEl, filter) {
+    var filtersEl = footerEl.find('#filters');
+    filtersEl.find('a').removeClass('selected');
+    filtersEl.find('a[href="#/' + (filter || '') + '"]').addClass('selected');
   }
 
   function listenForClearCompleted(footerEl) {
