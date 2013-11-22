@@ -29,7 +29,11 @@ var app = app || {};
               title: event.title,
               completed: false
             };
-            yield CSP.put(todoListUI, {action: 'createItem', item: todo});
+            yield CSP.put(todoListUI, {
+              action: 'createItems',
+              items: [todo],
+              clearInput: true
+            });
             break;
 
           case 'deleteTodo':
@@ -81,6 +85,22 @@ var app = app || {};
           case 'updateTodo':
             todos[event.id].title = event.title;
             break;
+
+          case 'filter':
+            selected = _.values(todos);
+
+            if (event.filter === 'completed' || event.filter === 'active') {
+              selected = _.where(selected, {
+                completed: (event.filter === 'completed')
+              });
+            }
+
+            yield CSP.put(todoListUI, {
+              action: 'filter',
+              items: selected,
+              filter: event.filter
+            });
+            break;
         }
 
         if (_.isEmpty(todos)) {
@@ -114,26 +134,20 @@ var app = app || {};
 
     CSP.go(function*() {
       var items = {};
+      var filter = null;
       var val, item, i, len;
 
       while (true) {
         val = yield CSP.take(control);
 
         switch (val.action) {
-          case 'createItem':
-            item = items[val.item.id] = createTodoItemUI(val.item);
-            CSP.pipe(item.events, events);
-
-            els.todoList.prepend(item.el);
-            els.newTodos.val('');
+          case 'createItems':
+            yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
+            if (val.clearInput) els.newTodos.val('');
             break;
 
           case 'deleteItems':
-            for (i = 0, len = val.ids.length; i < len; i++) {
-              item = items[val.ids[i]];
-              delete items[val.ids[i]];
-              yield CSP.put(item.control, {action: 'delete'});
-            }
+            yield CSP.take(deleteItems(items, val.ids));
             break;
 
           case 'setItemsStatus':
@@ -145,11 +159,46 @@ var app = app || {};
               });
             }
             break;
+
+          case 'filter':
+            filter = val.filter;
+            yield CSP.take(deleteItems(items, _.keys(items)));
+            yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
+            break;
         }
       }
     });
 
     return {control: control, events: events};
+  }
+
+  function deleteItems(itemsStore, ids) {
+    return CSP.go(function*() {
+      var item, i, len;
+      for (i = 0, len = ids.length; i < len; i++) {
+        item = itemsStore[ids[i]];
+        delete itemsStore[ids[i]];
+        yield CSP.put(item.control, {action: 'delete'});
+      }
+      return true;
+    });
+  }
+
+  function createItems(itemsStore, newItems, todoListEl, filter, events) {
+    return CSP.go(function*() {
+      var i, len, item;
+      for (i = 0, len = newItems.length; i < len; i++) {
+        var ignored = (filter === 'completed' && !newItems[i].completed) ||
+                      (filter === 'active' && newItems[i].completed);
+        if (ignored) continue;
+
+        item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
+        CSP.pipe(item.events, events);
+        todoListEl.prepend(item.el);
+      }
+
+      return true;
+    });
   }
 
   function listenForNewTodo(newTodosEl) {
@@ -311,8 +360,6 @@ var app = app || {};
     });
   }
 
-  function showFiltered() {}
-
   function init() {
     var els = {
       newTodos: $('#new-todo'),
@@ -331,7 +378,23 @@ var app = app || {};
     CSP.pipe(todoApp.todoListControl, todoListUI.control);
     CSP.pipe(todoApp.footerControl, footerUI.control);
 
-    Router({'/:filter': showFiltered}).init();
+    var router = Router({
+      '': function() {
+        CSP.putAsync(todoApp.uiEvents, {
+          action: 'filter',
+          filter: null
+        });
+      },
+
+      '/:filter': function(filter) {
+        CSP.putAsync(todoApp.uiEvents, {
+          action: 'filter',
+          filter: filter
+        });
+      }
+    });
+
+    router.init();
   }
 
   init();
