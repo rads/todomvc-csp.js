@@ -64,7 +64,7 @@ var app = app || {};
 
             yield CSP.put(todoListUI, {
               action: 'setItemsStatus',
-              ids: _.pluck(selected, 'id'),
+              items: selected,
               completed: event.completed
             });
             break;
@@ -157,12 +157,18 @@ var app = app || {};
             break;
 
           case 'setItemsStatus':
-            for (i = 0, len = val.ids.length; i < len; i++) {
-              item = items[val.ids[i]];
-              yield CSP.put(item.control, {
-                action: 'setStatus',
-                completed: val.completed
-              });
+            for (i = 0, len = val.items.length; i < len; i++) {
+              item = items[val.items[i].id];
+              if (!item) {
+                createItems(items, [val.items[i]], els.todoList, filter, events);
+              } else if (isIgnoredItem(filter, val.items[i])) {
+                deleteItems(items, [val.items[i].id]);
+              } else {
+                yield CSP.put(item.control, {
+                  action: 'setStatus',
+                  completed: val.completed
+                });
+              }
             }
             break;
 
@@ -184,19 +190,22 @@ var app = app || {};
       for (i = 0, len = ids.length; i < len; i++) {
         item = itemsStore[ids[i]];
         delete itemsStore[ids[i]];
-        yield CSP.put(item.control, {action: 'delete'});
+        $(item.el).remove();
       }
       return true;
     });
+  }
+
+  function isIgnoredItem(filter, item) {
+    return (filter === 'completed' && !item.completed) ||
+           (filter === 'active' && item.completed);
   }
 
   function createItems(itemsStore, newItems, todoListEl, filter, events) {
     return CSP.go(function*() {
       var i, len, item;
       for (i = 0, len = newItems.length; i < len; i++) {
-        var ignored = (filter === 'completed' && !newItems[i].completed) ||
-                      (filter === 'active' && newItems[i].completed);
-        if (ignored) continue;
+        if (isIgnoredItem(filter, newItems[i])) continue;
 
         item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
         CSP.pipe(item.events, events);
