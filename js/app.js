@@ -8,6 +8,29 @@ var app = app || {};
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
+  var TodoApp = {
+    newTodo: function(title, state, todoListUI) {
+      return CSP.go(function*() {
+        var id = state.counter++;
+
+        var todo = state.todos[id] = {
+          id: id,
+          title: title,
+          completed: false
+        };
+
+        yield CSP.put(todoListUI, {
+          action: 'createItems',
+          items: [todo],
+          clearInput: true
+        });
+      });
+    }
+  };
+
+  // ==========================================================================
+  // Event stream processing
+
   function createTodoApp() {
     var todoListUI = CSP.chan();
     var footerUI = CSP.chan();
@@ -15,7 +38,7 @@ var app = app || {};
 
     CSP.go(function*() {
       var todos = {};
-      var counter = 0;
+      var state = {todos: todos, counter: 0};
       var event, id, todo, selected, completed, i, len, ids;
 
       while (true) {
@@ -23,17 +46,7 @@ var app = app || {};
 
         switch (event.action) {
           case 'newTodo':
-            id = counter++;
-            todo = todos[id] = {
-              id: id,
-              title: event.title,
-              completed: false
-            };
-            yield CSP.put(todoListUI, {
-              action: 'createItems',
-              items: [todo],
-              clearInput: true
-            });
+            yield CSP.take(TodoApp.newTodo(event.title, state, todoListUI));
             break;
 
           case 'deleteTodo':
@@ -130,6 +143,9 @@ var app = app || {};
     };
   }
 
+  // ==========================================================================
+  // Interface representation
+
   function createTodoListUI(els) {
     var control = CSP.chan();
     var events = CSP.merge([
@@ -148,7 +164,7 @@ var app = app || {};
 
         switch (val.action) {
           case 'createItems':
-            yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
+            createItems(items, val.items, els.todoList, filter, events);
             if (val.clearInput) {
               els.toggleAll.prop('checked', false);
               els.newTodos.val('');
@@ -156,7 +172,7 @@ var app = app || {};
             break;
 
           case 'deleteItems':
-            yield CSP.take(deleteItems(items, val.ids));
+            deleteItems(items, val.ids);
             break;
 
           case 'setItemsStatus':
@@ -177,8 +193,8 @@ var app = app || {};
 
           case 'setFilter':
             filter = val.filter;
-            yield CSP.take(deleteItems(items, _.keys(items)));
-            yield CSP.take(createItems(items, val.items, els.todoList, filter, events));
+            deleteItems(items, _.keys(items));
+            createItems(items, val.items, els.todoList, filter, events);
             break;
         }
       }
@@ -188,15 +204,12 @@ var app = app || {};
   }
 
   function deleteItems(itemsStore, ids) {
-    return CSP.go(function*() {
-      var item, i, len;
-      for (i = 0, len = ids.length; i < len; i++) {
-        item = itemsStore[ids[i]];
-        delete itemsStore[ids[i]];
-        $(item.el).remove();
-      }
-      return true;
-    });
+    var item, i, len;
+    for (i = 0, len = ids.length; i < len; i++) {
+      item = itemsStore[ids[i]];
+      delete itemsStore[ids[i]];
+      $(item.el).remove();
+    }
   }
 
   function isIgnoredItem(filter, item) {
@@ -205,18 +218,14 @@ var app = app || {};
   }
 
   function createItems(itemsStore, newItems, todoListEl, filter, events) {
-    return CSP.go(function*() {
-      var i, len, item;
-      for (i = 0, len = newItems.length; i < len; i++) {
-        if (isIgnoredItem(filter, newItems[i])) continue;
+    var i, len, item;
+    for (i = 0, len = newItems.length; i < len; i++) {
+      if (isIgnoredItem(filter, newItems[i])) continue;
 
-        item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
-        CSP.pipe(item.events, events);
-        todoListEl.prepend(item.el);
-      }
-
-      return true;
-    });
+      item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
+      CSP.pipe(item.events, events);
+      todoListEl.prepend(item.el);
+    }
   }
 
   function listenForNewTodo(newTodosEl) {
