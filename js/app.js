@@ -10,28 +10,22 @@ var app = app || {};
 
   var TodoApp = {
     newTodo: function(title, state, todoListUI) {
-      return CSP.go(function*() {
-        var id = state.counter++;
+      var id = state.counter++;
 
-        var todo = state.todos[id] = {
-          id: id,
-          title: title,
-          completed: false
-        };
+      var todo = state.todos[id] = {
+        id: id,
+        title: title,
+        completed: false
+      };
 
-        yield CSP.put(todoListUI, {
-          action: 'createItems',
-          items: [todo],
-          clearInput: true
-        });
-      });
+      todoListUI.createItems([todo], true);
     }
   };
 
   // ==========================================================================
   // Event stream processing
 
-  function createTodoApp() {
+  function createTodoApp(todoListUIObj, footerUIObj) {
     var todoListUI = CSP.chan();
     var footerUI = CSP.chan();
     var uiEvents = CSP.chan();
@@ -46,7 +40,7 @@ var app = app || {};
 
         switch (event.action) {
           case 'newTodo':
-            yield CSP.take(TodoApp.newTodo(event.title, state, todoListUI));
+            TodoApp.newTodo(event.title, state, todoListUIObj);
             break;
 
           case 'deleteTodo':
@@ -154,23 +148,16 @@ var app = app || {};
       listenForClearCompleted(els.todoList)
     ]);
 
+    var filter = null;
+    var items = {};
+
     CSP.go(function*() {
-      var items = {};
-      var filter = null;
       var val, item, i, len;
 
       while (true) {
         val = yield CSP.take(control);
 
         switch (val.action) {
-          case 'createItems':
-            createItems(items, val.items, els.todoList, filter, events);
-            if (val.clearInput) {
-              els.toggleAll.prop('checked', false);
-              els.newTodos.val('');
-            }
-            break;
-
           case 'deleteItems':
             deleteItems(items, val.ids);
             break;
@@ -200,8 +187,24 @@ var app = app || {};
       }
     });
 
-    return {control: control, events: events};
+    function _createItems(newItems, clearInput) {
+      if (typeof clearInput === 'undefined') clearInput = false;
+
+      createItems(items, newItems, els.todoList, filter, events);
+
+      if (clearInput) {
+        els.toggleAll.prop('checked', false);
+        els.newTodos.val('');
+      }
+    }
+
+    return {
+      control: control,
+      events: events,
+      createItems: _createItems
+    };
   }
+
 
   function deleteItems(itemsStore, ids) {
     var item, i, len;
@@ -412,9 +415,9 @@ var app = app || {};
       toggleAll: $('#toggle-all')
     };
 
-    var todoApp = createTodoApp();
     var todoListUI = createTodoListUI(els);
     var footerUI = createFooterUI(els);
+    var todoApp = createTodoApp(todoListUI, footerUI);
 
     CSP.pipe(todoListUI.events, todoApp.uiEvents);
     CSP.pipe(footerUI.events, todoApp.uiEvents);
