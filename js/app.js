@@ -88,17 +88,8 @@ var app = app || {};
               });
             }
 
-            yield CSP.put(todoListUI, {
-              action: 'setFilter',
-              items: selected,
-              filter: event.filter
-            });
-
-            yield CSP.put(footerUI, {
-              action: 'setFilter',
-              filter: event.filter
-            });
-
+            todoListUIObj.setFilter(selected, event.filter);
+            footerUIObj.setFilter(event.filter);
             break;
         }
 
@@ -137,22 +128,6 @@ var app = app || {};
     var filter = null;
     var items = {};
 
-    CSP.go(function*() {
-      var val, item, i, len;
-
-      while (true) {
-        val = yield CSP.take(control);
-
-        switch (val.action) {
-          case 'setFilter':
-            filter = val.filter;
-            deleteItems(items, _.keys(items));
-            createItems(items, val.items, els.todoList, filter, events);
-            break;
-        }
-      }
-    });
-
     function _createItems(newItems, clearInput) {
       if (typeof clearInput === 'undefined') clearInput = false;
 
@@ -187,12 +162,19 @@ var app = app || {};
       }
     }
 
+    function _setFilter(itms, filtr) {
+      filter = filtr;
+      deleteItems(items, _.keys(items));
+      createItems(items, itms, els.todoList, filter, events);
+    }
+
     return {
       control: control,
       events: events,
       createItems: _createItems,
       deleteItems: _deleteItems,
-      setItemsStatus: _setItemsStatus
+      setItemsStatus: _setItemsStatus,
+      setFilter: _setFilter
     };
   }
 
@@ -352,8 +334,9 @@ var app = app || {};
       listenForClearCompleted(els.footer)
     ]);
 
+    var filter = null;
+
     CSP.go(function*() {
-      var filter = null;
       var val;
 
       while (true) {
@@ -372,16 +355,20 @@ var app = app || {};
           case 'hide':
             els.footer.hide();
             break;
-
-          case 'setFilter':
-            filter = val.filter;
-            setSelectedFilterLink(els.footer, filter);
-            break;
         }
       }
     });
 
-    return {control: control, events: events};
+    function _setFilter(filtr) {
+      filter = filtr;
+      setSelectedFilterLink(els.footer, filter);
+    }
+
+    return {
+      control: control,
+      events: events,
+      setFilter: _setFilter
+    };
   }
 
   function setSelectedFilterLink(footerEl, filter) {
