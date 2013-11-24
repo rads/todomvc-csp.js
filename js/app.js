@@ -94,7 +94,7 @@ var app = app || {};
         }
 
         if (_.isEmpty(todos)) {
-          yield CSP.put(footerUI, {action: 'hide'});
+          footerUIObj.hide();
         } else {
           completed = _.where(_.values(todos), {completed: true});
 
@@ -351,10 +351,6 @@ var app = app || {};
               append(statsTemplate(stats));
             setSelectedFilterLink(els.footer, filter);
             break;
-
-          case 'hide':
-            els.footer.hide();
-            break;
         }
       }
     });
@@ -364,10 +360,15 @@ var app = app || {};
       setSelectedFilterLink(els.footer, filter);
     }
 
+    function _hide() {
+      return els.footer.hide();
+    }
+
     return {
       control: control,
       events: events,
-      setFilter: _setFilter
+      setFilter: _setFilter,
+      hide: _hide
     };
   }
 
