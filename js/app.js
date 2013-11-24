@@ -52,11 +52,7 @@ var app = app || {};
             var todo = todos[event.id];
             todo.completed = !todo.completed;
 
-            yield CSP.put(todoListUI, {
-              action: 'setItemsStatus',
-              items: [todo],
-              completed: todo.completed
-            });
+            todoListUIObj.setItemsStatus([todo], todo.completed);
             break;
 
           case 'toggleAll':
@@ -66,11 +62,7 @@ var app = app || {};
               todos[todo.id].completed = event.completed;
             });
 
-            yield CSP.put(todoListUI, {
-              action: 'setItemsStatus',
-              items: selected,
-              completed: event.completed
-            });
+            todoListUIObj.setItemsStatus(selected, event.completed);
             break;
 
           case 'clearCompleted':
@@ -152,22 +144,6 @@ var app = app || {};
         val = yield CSP.take(control);
 
         switch (val.action) {
-          case 'setItemsStatus':
-            for (i = 0, len = val.items.length; i < len; i++) {
-              item = items[val.items[i].id];
-              if (!item) {
-                createItems(items, [val.items[i]], els.todoList, filter, events);
-              } else if (isIgnoredItem(filter, val.items[i])) {
-                deleteItems(items, [val.items[i].id]);
-              } else {
-                yield CSP.put(item.control, {
-                  action: 'setStatus',
-                  completed: val.completed
-                });
-              }
-            }
-            break;
-
           case 'setFilter':
             filter = val.filter;
             deleteItems(items, _.keys(items));
@@ -192,11 +168,31 @@ var app = app || {};
       deleteItems(items, ids);
     }
 
+    function _setItemsStatus(itms, completed) {
+      var item;
+
+      for (var i = 0, len = itms.length; i < len; i++) {
+        item = items[itms[i].id];
+
+        if (!item) {
+          createItems(items, [itms[i]], els.todoList, filter, events);
+        } else if (isIgnoredItem(filter, itms[i])) {
+          deleteItems(items, [itms[i].id]);
+        } else {
+          CSP.putAsync(item.control, {
+            action: 'setStatus',
+            completed: completed
+          });
+        }
+      }
+    }
+
     return {
       control: control,
       events: events,
       createItems: _createItems,
-      deleteItems: _deleteItems
+      deleteItems: _deleteItems,
+      setItemsStatus: _setItemsStatus
     };
   }
 
