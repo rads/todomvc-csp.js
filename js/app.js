@@ -45,10 +45,7 @@ var app = app || {};
 
           case 'deleteTodo':
             delete todos[event.id];
-            yield CSP.put(todoListUI, {
-              action: 'deleteItems',
-              ids: [event.id]
-            });
+            todoListUIObj.deleteItems([event.id]);
             break;
 
           case 'toggleOne':
@@ -83,10 +80,7 @@ var app = app || {};
               delete todos[todo.id];
             });
 
-            yield CSP.put(todoListUI, {
-              action: 'deleteItems',
-              ids: _.pluck(completed, 'id')
-            });
+            todoListUIObj.deleteItems(_.pluck(completed, 'id'));
             break;
 
           case 'updateTodo':
@@ -158,10 +152,6 @@ var app = app || {};
         val = yield CSP.take(control);
 
         switch (val.action) {
-          case 'deleteItems':
-            deleteItems(items, val.ids);
-            break;
-
           case 'setItemsStatus':
             for (i = 0, len = val.items.length; i < len; i++) {
               item = items[val.items[i].id];
@@ -198,10 +188,15 @@ var app = app || {};
       }
     }
 
+    function _deleteItems(ids) {
+      deleteItems(items, ids);
+    }
+
     return {
       control: control,
       events: events,
-      createItems: _createItems
+      createItems: _createItems,
+      deleteItems: _deleteItems
     };
   }
 
