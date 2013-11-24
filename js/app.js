@@ -98,8 +98,7 @@ var app = app || {};
         } else {
           completed = _.where(_.values(todos), {completed: true});
 
-          yield CSP.put(footerUI, {
-            action: 'updateStats',
+          footerUIObj.updateStats({
             remaining: _.size(todos) - _.size(completed),
             completed: _.size(completed)
           });
@@ -336,24 +335,13 @@ var app = app || {};
 
     var filter = null;
 
-    CSP.go(function*() {
-      var val;
-
-      while (true) {
-        val = yield CSP.take(control);
-
-        switch (val.action) {
-          case 'updateStats':
-            var stats = _.pick(val, 'completed', 'remaining');
-            els.footer.
-              show().
-              html('').
-              append(statsTemplate(stats));
-            setSelectedFilterLink(els.footer, filter);
-            break;
-        }
-      }
-    });
+    function _updateStats(stats) {
+      els.footer.
+        show().
+        html('').
+        append(statsTemplate(stats));
+      setSelectedFilterLink(els.footer, filter);
+    }
 
     function _setFilter(filtr) {
       filter = filtr;
@@ -367,6 +355,7 @@ var app = app || {};
     return {
       control: control,
       events: events,
+      updateStats: _updateStats,
       setFilter: _setFilter,
       hide: _hide
     };
