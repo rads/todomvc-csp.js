@@ -30,79 +30,78 @@ var app = app || {};
     var footerUI = CSP.chan();
     var uiEvents = CSP.chan();
 
-    CSP.go(function*() {
-      var todos = {};
-      var state = {todos: todos, counter: 0};
+    var todos = {};
+    var state = {todos: todos, counter: 0};
+
+    CSP.goLoop(function*() {
       var event, id, todo, selected, completed, i, len, ids;
 
-      while (true) {
-        event = yield CSP.take(uiEvents);
+      event = yield CSP.take(uiEvents);
 
-        switch (event.action) {
-          case 'newTodo':
-            TodoApp.newTodo(event.title, state, todoListUIObj);
-            break;
+      switch (event.action) {
+        case 'newTodo':
+          TodoApp.newTodo(event.title, state, todoListUIObj);
+          break;
 
-          case 'deleteTodo':
-            delete todos[event.id];
-            todoListUIObj.deleteItems([event.id]);
-            break;
+        case 'deleteTodo':
+          delete todos[event.id];
+          todoListUIObj.deleteItems([event.id]);
+          break;
 
-          case 'toggleOne':
-            var todo = todos[event.id];
-            todo.completed = !todo.completed;
+        case 'toggleOne':
+          var todo = todos[event.id];
+          todo.completed = !todo.completed;
 
-            todoListUIObj.setItemsStatus([todo], todo.completed);
-            break;
+          todoListUIObj.setItemsStatus([todo], todo.completed);
+          break;
 
-          case 'toggleAll':
-            selected = _.where(_.values(todos), {completed: !event.completed});
+        case 'toggleAll':
+          selected = _.where(_.values(todos), {completed: !event.completed});
 
-            _.each(selected, function(todo) {
-              todos[todo.id].completed = event.completed;
-            });
+          _.each(selected, function(todo) {
+            todos[todo.id].completed = event.completed;
+          });
 
-            todoListUIObj.setItemsStatus(selected, event.completed);
-            break;
+          todoListUIObj.setItemsStatus(selected, event.completed);
+          break;
 
-          case 'clearCompleted':
-            completed = _.where(_.values(todos), {completed: true});
-
-            _.each(completed, function(todo) {
-              delete todos[todo.id];
-            });
-
-            todoListUIObj.deleteItems(_.pluck(completed, 'id'));
-            break;
-
-          case 'updateTodo':
-            todos[event.id].title = event.title;
-            break;
-
-          case 'filter':
-            selected = _.values(todos);
-
-            if (event.filter === 'completed' || event.filter === 'active') {
-              selected = _.where(selected, {
-                completed: (event.filter === 'completed')
-              });
-            }
-
-            todoListUIObj.setFilter(selected, event.filter);
-            footerUIObj.setFilter(event.filter);
-            break;
-        }
-
-        if (_.isEmpty(todos)) {
-          footerUIObj.hide();
-        } else {
+        case 'clearCompleted':
           completed = _.where(_.values(todos), {completed: true});
 
-          footerUIObj.updateStats({
-            remaining: _.size(todos) - _.size(completed),
-            completed: _.size(completed)
+          _.each(completed, function(todo) {
+            delete todos[todo.id];
           });
-        }
+
+          todoListUIObj.deleteItems(_.pluck(completed, 'id'));
+          break;
+
+        case 'updateTodo':
+          todos[event.id].title = event.title;
+          break;
+
+        case 'filter':
+          selected = _.values(todos);
+
+          if (event.filter === 'completed' || event.filter === 'active') {
+            selected = _.where(selected, {
+              completed: (event.filter === 'completed')
+            });
+          }
+
+          todoListUIObj.setFilter(selected, event.filter);
+          footerUIObj.setFilter(event.filter);
+          break;
+      }
+
+      if (_.isEmpty(todos)) {
+        footerUIObj.hide();
+      } else {
+        completed = _.where(_.values(todos), {completed: true});
+
+        footerUIObj.updateStats({
+          remaining: _.size(todos) - _.size(completed),
+          completed: _.size(completed)
+        });
       }
     });
 
@@ -153,10 +152,7 @@ var app = app || {};
         } else if (isIgnoredItem(filter, itms[i])) {
           deleteItems(items, [itms[i].id]);
         } else {
-          CSP.putAsync(item.control, {
-            action: 'setStatus',
-            completed: completed
-          });
+          item.setStatus(completed);
         }
       }
     }
@@ -232,7 +228,6 @@ var app = app || {};
   function createTodoItemUI(item) {
     var id = item.id;
     var el = $(itemTemplate(item));
-    var isEditing = false;
 
     var control = CSP.chan();
     var events = CSP.merge([
@@ -240,51 +235,48 @@ var app = app || {};
       listenForDeleteTodo(el, id)
     ]);
 
-    CSP.pipe(listenForEditEvents(el), control);
-
     if (item.completed) $(el).addClass('completed');
 
-    CSP.go(function*() {
-      var val, title;
+    var editing = editingEvents(el);
 
-      while (true) {
-        val = yield CSP.take(control);
-
-        switch(val.action) {
-          case 'delete':
-            isEditing = false;
-            el.remove();
-            break;
-
-          case 'setStatus':
-            el.find('.toggle').prop('checked', val.completed);
-            el.toggleClass('completed', val.completed);
-            break;
-
-          case 'startEditing':
-            el.addClass('editing');
-            el.find('.edit').select();
-            isEditing = true;
-            break;
-
-          case 'stopEditing':
-            if (!isEditing) break;
-
-            title = el.find('.edit').val();
-            el.removeClass('editing');
-            el.find('label').text(title);
-
-            yield CSP.put(events, {
-              action: 'updateTodo',
-              id: id,
-              title: title
-            });
-            break;
-        }
-      }
+    CSP.goLoop(function*() {
+      var val = yield CSP.take(editing);
+      val ? _startEditing() : _stopEditing();
     });
 
-    return {control: control, events: events, el: el};
+    function _delete() {
+      el.remove();
+    }
+
+    function _setStatus(completed) {
+      el.find('.toggle').prop('checked', completed);
+      el.toggleClass('completed', completed);
+    }
+
+    function _startEditing() {
+      el.addClass('editing');
+      el.find('.edit').select();
+    }
+
+    function _stopEditing() {
+      var title = el.find('.edit').val();
+      el.removeClass('editing');
+      el.find('label').text(title);
+
+      CSP.putAsync(events, {
+        action: 'updateTodo',
+        id: id,
+        title: title
+      });
+    }
+
+    return {
+      control: control,
+      events: events,
+      el: el,
+      delete: _delete,
+      setStatus: _setStatus
+    };
   }
 
   function listenForToggleOne(todoItemEl, id) {
@@ -303,11 +295,14 @@ var app = app || {};
     });
   }
 
-  function listenForEditEvents(todoItemEl) {
+  function constantly(val) {
+    return function() {
+      return val;
+    };
+  }
+
+  function editingEvents(todoItemEl) {
     var start = app.helpers.domEvents(todoItemEl, 'dblclick');
-    start = CSP.mapPull(start, function(event) {
-      return {action: 'startEditing'};
-    });
 
     var bodyClicks = app.helpers.domEvents($('html'), 'click');
     bodyClicks = CSP.removePull(bodyClicks, function(event) {
@@ -320,11 +315,13 @@ var app = app || {};
     });
 
     var stop = CSP.merge([bodyClicks, enterPresses]);
-    stop = CSP.mapPull(stop, function(event) {
-      return {action: 'stopEditing'}
-    });
 
-    return CSP.merge([start, stop]);
+    var out = CSP.merge([
+      CSP.mapPull(start, constantly(true)),
+      CSP.mapPull(stop, constantly(false))
+    ]);
+
+    return CSP.unique(out);
   }
 
   function createFooterUI(els) {
