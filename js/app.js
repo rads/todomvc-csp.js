@@ -34,9 +34,7 @@ var app = app || {};
     var state = {todos: todos, counter: 0};
 
     CSP.goLoop(function*() {
-      var event, id, todo, selected, completed, i, len, ids;
-
-      event = yield CSP.take(uiEvents);
+      var event = yield CSP.take(uiEvents);
 
       switch (event.action) {
         case 'newTodo':
@@ -56,7 +54,7 @@ var app = app || {};
           break;
 
         case 'toggleAll':
-          selected = _.where(_.values(todos), {completed: !event.completed});
+          var selected = _.where(_.values(todos), {completed: !event.completed});
 
           _.each(selected, function(todo) {
             todos[todo.id].completed = event.completed;
@@ -66,7 +64,7 @@ var app = app || {};
           break;
 
         case 'clearCompleted':
-          completed = _.where(_.values(todos), {completed: true});
+          var completed = _.where(_.values(todos), {completed: true});
 
           _.each(completed, function(todo) {
             delete todos[todo.id];
@@ -80,7 +78,7 @@ var app = app || {};
           break;
 
         case 'filter':
-          selected = _.values(todos);
+          var selected = _.values(todos);
 
           if (event.filter === 'completed' || event.filter === 'active') {
             selected = _.where(selected, {
@@ -96,7 +94,7 @@ var app = app || {};
       if (_.isEmpty(todos)) {
         footerUIObj.hide();
       } else {
-        completed = _.where(_.values(todos), {completed: true});
+        var completed = _.where(_.values(todos), {completed: true});
 
         footerUIObj.updateStats({
           remaining: _.size(todos) - _.size(completed),
