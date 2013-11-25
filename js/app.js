@@ -176,8 +176,10 @@ var app = app || {};
     var item, i, len;
     for (i = 0, len = ids.length; i < len; i++) {
       item = itemsStore[ids[i]];
-      delete itemsStore[ids[i]];
-      $(item.el).remove();
+      if (item) {
+        delete itemsStore[ids[i]];
+        $(item.el).remove();
+      }
     }
   }
 
