@@ -8,14 +8,15 @@ var app = app || {};
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
-  function createTodoListUI(el) {
+  function createTodoAppUI(el) {
     var $el = $(el);
     var $input = $el.find('#new-todo');
     var $toggleAll = $el.find('#toggle-all');
     var $list = $el.find('#todo-list');
+    var footer = createFooterUI($el.find('#footer'));
 
-    var control = CSP.chan();
     var events = CSP.merge([
+      footer.events,
       listenForNewTodo($input),
       listenForToggleAll($toggleAll),
       listenForClearCompleted($list)
@@ -59,15 +60,25 @@ var app = app || {};
       filter = filtr;
       deleteItems(items, _.keys(items));
       createItems(items, itms, $list, filter, events);
+      footer.setFilter(filter);
+    }
+
+    function _hideFooter() {
+      footer.hide();
+    }
+
+    function _updateFooterStats(stats) {
+      footer.updateStats(stats);
     }
 
     return {
-      control: control,
       events: events,
       createItems: _createItems,
       deleteItems: _deleteItems,
       setItemsStatus: _setItemsStatus,
-      setFilter: _setFilter
+      setFilter: _setFilter,
+      hideFooter: _hideFooter,
+      updateFooterStats: _updateFooterStats
     };
   }
 
@@ -235,7 +246,6 @@ var app = app || {};
   function createFooterUI(el) {
     var $el = $(el);
 
-    var control = CSP.chan();
     var events = CSP.merge([
       listenForClearCompleted($el)
     ]);
@@ -260,7 +270,6 @@ var app = app || {};
     }
 
     return {
-      control: control,
       events: events,
       updateStats: _updateStats,
       setFilter: _setFilter,
@@ -283,7 +292,6 @@ var app = app || {};
   }
 
   app.ui = {
-    createTodoListUI: createTodoListUI,
-    createFooterUI: createFooterUI
+    createTodoAppUI: createTodoAppUI,
   };
 })();

@@ -3,18 +3,16 @@ var app = app || {};
 ;(function() {
   'use strict';
 
-  function createTodoApp(todoListUI, footerUI) {
-    var uiEvents = CSP.chan();
-
+  function createTodoApp(ui) {
     var todos = {};
     var state = {todos: todos, counter: 0};
 
     CSP.goLoop(function*() {
-      var event = yield CSP.take(uiEvents);
+      var event = yield CSP.take(ui.events);
 
       switch (event.action) {
         case 'newTodo':
-          newTodo(event.title, state, todoListUI);
+          newTodo(event.title, state);
           break;
 
         case 'deleteTodo':
@@ -45,7 +43,7 @@ var app = app || {};
       updateFooter();
     });
 
-    function newTodo(title, state, todoListUI) {
+    function newTodo(title, state) {
       var id = state.counter++;
 
       var todo = state.todos[id] = {
@@ -54,19 +52,19 @@ var app = app || {};
         completed: false
       };
 
-      todoListUI.createItems([todo], true);
+      ui.createItems([todo], true);
     }
 
     function deleteTodo(id) {
       delete todos[id];
-      todoListUI.deleteItems([id]);
+      ui.deleteItems([id]);
     }
 
     function toggleOne(id) {
       var todo = todos[id];
       todo.completed = !todo.completed;
 
-      todoListUI.setItemsStatus([todo], todo.completed);
+      ui.setItemsStatus([todo], todo.completed);
     }
 
     function toggleAll(completed) {
@@ -76,7 +74,7 @@ var app = app || {};
         todos[todo.id].completed = completed;
       });
 
-      todoListUI.setItemsStatus(selected, completed);
+      ui.setItemsStatus(selected, completed);
     }
 
     function clearCompleted() {
@@ -86,7 +84,7 @@ var app = app || {};
         delete todos[todo.id];
       });
 
-      todoListUI.deleteItems(_.pluck(completed, 'id'));
+      ui.deleteItems(_.pluck(completed, 'id'));
     }
 
     function updateTodo(id, title) {
@@ -102,17 +100,16 @@ var app = app || {};
         });
       }
 
-      todoListUI.setFilter(selected, filter);
-      footerUI.setFilter(filter);
+      ui.setFilter(selected, filter);
     }
 
     function updateFooter() {
       if (_.isEmpty(todos)) {
-        footerUI.hide();
+        ui.hideFooter();
       } else {
         var completed = _.where(_.values(todos), {completed: true});
 
-        footerUI.updateStats({
+        ui.updateFooterStats({
           remaining: _.size(todos) - _.size(completed),
           completed: _.size(completed)
         });
@@ -120,31 +117,21 @@ var app = app || {};
     }
 
     return {
-      uiEvents: uiEvents
+      setFilter: filterTodos
     };
   }
 
   function init() {
-    var todoListUI = app.ui.createTodoListUI($('#todoapp'));
-    var footerUI = app.ui.createFooterUI($('#footer'));
-    var todoApp = createTodoApp(todoListUI, footerUI);
-
-    CSP.pipe(todoListUI.events, todoApp.uiEvents);
-    CSP.pipe(footerUI.events, todoApp.uiEvents);
+    var ui = app.ui.createTodoAppUI($('#todoapp'));
+    var todoApp = createTodoApp(ui);
 
     var router = Router({
       '': function() {
-        CSP.putAsync(todoApp.uiEvents, {
-          action: 'filter',
-          filter: null
-        });
+        todoApp.setFilter(null);
       },
 
       '/:filter': function(filter) {
-        CSP.putAsync(todoApp.uiEvents, {
-          action: 'filter',
-          filter: filter
-        });
+        todoApp.setFilter(filter);
       }
     });
 
