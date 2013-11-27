@@ -8,12 +8,17 @@ var app = app || {};
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
-  function createTodoListUI(els) {
+  function createTodoListUI(el) {
+    var $el = $(el);
+    var $input = $el.find('#new-todo');
+    var $toggleAll = $el.find('#toggle-all');
+    var $list = $el.find('#todo-list');
+
     var control = CSP.chan();
     var events = CSP.merge([
-      listenForNewTodo(els.newTodos),
-      listenForToggleAll(els.toggleAll),
-      listenForClearCompleted(els.todoList)
+      listenForNewTodo($input),
+      listenForToggleAll($toggleAll),
+      listenForClearCompleted($list)
     ]);
 
     var filter = null;
@@ -22,11 +27,11 @@ var app = app || {};
     function _createItems(newItems, clearInput) {
       if (typeof clearInput === 'undefined') clearInput = false;
 
-      createItems(items, newItems, els.todoList, filter, events);
+      createItems(items, newItems, $list, filter, events);
 
       if (clearInput) {
-        els.toggleAll.prop('checked', false);
-        els.newTodos.val('');
+        $toggleAll.prop('checked', false);
+        $input.val('');
       }
     }
 
@@ -41,7 +46,7 @@ var app = app || {};
         item = items[itms[i].id];
 
         if (!item) {
-          createItems(items, [itms[i]], els.todoList, filter, events);
+          createItems(items, [itms[i]], $list, filter, events);
         } else if (isIgnoredItem(filter, itms[i])) {
           deleteItems(items, [itms[i].id]);
         } else {
@@ -53,7 +58,7 @@ var app = app || {};
     function _setFilter(itms, filtr) {
       filter = filtr;
       deleteItems(items, _.keys(items));
-      createItems(items, itms, els.todoList, filter, events);
+      createItems(items, itms, $list, filter, events);
     }
 
     return {
@@ -125,7 +130,6 @@ var app = app || {};
     var el = $(itemTemplate(item));
     var done = CSP.chan();
 
-    var control = CSP.chan();
     var events = CSP.merge([
       listenForToggleOne(el, id),
       listenForDeleteTodo(el, id)
@@ -176,7 +180,6 @@ var app = app || {};
     }
 
     return {
-      control: control,
       events: events,
       el: el,
       delete: _delete,
@@ -229,29 +232,31 @@ var app = app || {};
     return CSP.unique(out);
   }
 
-  function createFooterUI(els) {
+  function createFooterUI(el) {
+    var $el = $(el);
+
     var control = CSP.chan();
     var events = CSP.merge([
-      listenForClearCompleted(els.footer)
+      listenForClearCompleted($el)
     ]);
 
     var filter = null;
 
     function _updateStats(stats) {
-      els.footer.
+      $el.
         show().
         html('').
         append(statsTemplate(stats));
-      setSelectedFilterLink(els.footer, filter);
+      setSelectedFilterLink($el, filter);
     }
 
     function _setFilter(filtr) {
       filter = filtr;
-      setSelectedFilterLink(els.footer, filter);
+      setSelectedFilterLink($el, filter);
     }
 
     function _hide() {
-      return els.footer.hide();
+      return $el.hide();
     }
 
     return {

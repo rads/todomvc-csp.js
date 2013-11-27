@@ -3,20 +3,6 @@ var app = app || {};
 ;(function() {
   'use strict';
 
-  var TodoApp = {
-    newTodo: function(title, state, todoListUI) {
-      var id = state.counter++;
-
-      var todo = state.todos[id] = {
-        id: id,
-        title: title,
-        completed: false
-      };
-
-      todoListUI.createItems([todo], true);
-    }
-  };
-
   function createTodoApp(todoListUI, footerUI) {
     var uiEvents = CSP.chan();
 
@@ -28,59 +14,99 @@ var app = app || {};
 
       switch (event.action) {
         case 'newTodo':
-          TodoApp.newTodo(event.title, state, todoListUI);
+          newTodo(event.title, state, todoListUI);
           break;
 
         case 'deleteTodo':
-          delete todos[event.id];
-          todoListUI.deleteItems([event.id]);
+          deleteTodo(event.id);
           break;
 
         case 'toggleOne':
-          var todo = todos[event.id];
-          todo.completed = !todo.completed;
-
-          todoListUI.setItemsStatus([todo], todo.completed);
+          toggleOne(event.id);
           break;
 
         case 'toggleAll':
-          var selected = _.where(_.values(todos), {completed: !event.completed});
-
-          _.each(selected, function(todo) {
-            todos[todo.id].completed = event.completed;
-          });
-
-          todoListUI.setItemsStatus(selected, event.completed);
+          toggleAll(event.completed);
           break;
 
         case 'clearCompleted':
-          var completed = _.where(_.values(todos), {completed: true});
-
-          _.each(completed, function(todo) {
-            delete todos[todo.id];
-          });
-
-          todoListUI.deleteItems(_.pluck(completed, 'id'));
+          clearCompleted();
           break;
 
         case 'updateTodo':
-          todos[event.id].title = event.title;
+          updateTodo(event.id, event.title);
           break;
 
         case 'filter':
-          var selected = _.values(todos);
-
-          if (event.filter === 'completed' || event.filter === 'active') {
-            selected = _.where(selected, {
-              completed: (event.filter === 'completed')
-            });
-          }
-
-          todoListUI.setFilter(selected, event.filter);
-          footerUI.setFilter(event.filter);
+          filterTodos(event.filter);
           break;
       }
 
+      updateFooter();
+    });
+
+    function newTodo(title, state, todoListUI) {
+      var id = state.counter++;
+
+      var todo = state.todos[id] = {
+        id: id,
+        title: title,
+        completed: false
+      };
+
+      todoListUI.createItems([todo], true);
+    }
+
+    function deleteTodo(id) {
+      delete todos[id];
+      todoListUI.deleteItems([id]);
+    }
+
+    function toggleOne(id) {
+      var todo = todos[id];
+      todo.completed = !todo.completed;
+
+      todoListUI.setItemsStatus([todo], todo.completed);
+    }
+
+    function toggleAll(completed) {
+      var selected = _.where(_.values(todos), {completed: !completed});
+
+      _.each(selected, function(todo) {
+        todos[todo.id].completed = completed;
+      });
+
+      todoListUI.setItemsStatus(selected, completed);
+    }
+
+    function clearCompleted() {
+      var completed = _.where(_.values(todos), {completed: true});
+
+      _.each(completed, function(todo) {
+        delete todos[todo.id];
+      });
+
+      todoListUI.deleteItems(_.pluck(completed, 'id'));
+    }
+
+    function updateTodo(id, title) {
+      todos[id].title = title;
+    }
+
+    function filterTodos(filter) {
+      var selected = _.values(todos);
+
+      if (filter === 'completed' || filter === 'active') {
+        selected = _.where(selected, {
+          completed: (filter === 'completed')
+        });
+      }
+
+      todoListUI.setFilter(selected, filter);
+      footerUI.setFilter(filter);
+    }
+
+    function updateFooter() {
       if (_.isEmpty(todos)) {
         footerUI.hide();
       } else {
@@ -91,7 +117,7 @@ var app = app || {};
           completed: _.size(completed)
         });
       }
-    });
+    }
 
     return {
       uiEvents: uiEvents
@@ -99,15 +125,8 @@ var app = app || {};
   }
 
   function init() {
-    var els = {
-      newTodos: $('#new-todo'),
-      todoList: $('#todo-list'),
-      footer: $('#footer'),
-      toggleAll: $('#toggle-all')
-    };
-
-    var todoListUI = app.ui.createTodoListUI(els);
-    var footerUI = app.ui.createFooterUI(els);
+    var todoListUI = app.ui.createTodoListUI($('#todoapp'));
+    var footerUI = app.ui.createFooterUI($('#footer'));
     var todoApp = createTodoApp(todoListUI, footerUI);
 
     CSP.pipe(todoListUI.events, todoApp.uiEvents);
