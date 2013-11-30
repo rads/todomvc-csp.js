@@ -139,14 +139,14 @@ var app = app || {};
   }
 
   function createTodoItemUI(item) {
-    var id = item.id;
     var el = $(itemTemplate(item));
 
     if (item.completed) $(el).addClass('completed');
 
-    var edits = editingEvents(el);
+    var edits = editEvents(el);
     var update = CSP.chan();
-    var remove = listenForDeleteTodo(el, id);
+    var toggle = app.helpers.domEvents(el, 'click', '.toggle');
+    var remove = app.helpers.domEvents(el, 'click', '.destroy');
     var removeOut = CSP.chan();
 
     CSP.goLoop(function*() {
@@ -159,6 +159,7 @@ var app = app || {};
       } else if (edits === result.chan) {
         _startEditing();
         yield CSP.take(result.value);
+        debugger;
         _stopEditing();
       }
     });
@@ -188,33 +189,19 @@ var app = app || {};
     return {
       el: el,
       setStatus: _setStatus,
-      toggle: listenForToggleOne(el, id),
+      toggle: toggle,
       remove: removeOut,
       update: update,
       forceRemove: forceRemove
     };
   }
 
-  function listenForToggleOne(todoItemEl, id) {
-    var events = app.helpers.domEvents(todoItemEl, 'click', '.toggle');
-
-    return CSP.mapPull(events, constantly(id));
-  }
-
-  function listenForDeleteTodo(todoItemEl, id) {
-    var events = app.helpers.domEvents(todoItemEl, 'click', '.destroy');
-    return CSP.mapPull(events, constantly(id));
-  }
-
-  function constantly(val) {
-    return function() {
-      return val;
-    };
-  }
-
-  function editingEvents(todoItemEl) {
+  function editEvents(todoItemEl) {
     var edits = CSP.chan();
     var itemClicks = app.helpers.domEvents(todoItemEl, 'dblclick');
+    itemClicks = CSP.removePull(itemClicks, function(event) {
+      return $(event.target).is('.destroy');
+    });
 
     var bodyClicks = app.helpers.domEvents($('html'), 'click');
     bodyClicks = CSP.removePull(bodyClicks, function(event) {
@@ -229,11 +216,11 @@ var app = app || {};
     CSP.goLoop(function*() {
       yield CSP.take(itemClicks);
 
-      var edit = CSP.go(function*() {
+      var done = CSP.go(function*() {
         yield CSP.alts([bodyClicks, enterPresses]);
       });
 
-      yield CSP.put(edits, edit);
+      yield CSP.put(edits, done);
     });
 
     return edits;
@@ -280,6 +267,6 @@ var app = app || {};
   }
 
   app.ui = {
-    createTodoAppUI: createTodoAppUI,
+    createTodoAppUI: createTodoAppUI
   };
 })();
