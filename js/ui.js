@@ -144,29 +144,22 @@ var app = app || {};
 
     if (item.completed) $(el).addClass('completed');
 
-    var editing = editingEvents(el);
-    var isEditing = false;
+    var edits = editingEvents(el);
     var update = CSP.chan();
     var remove = listenForDeleteTodo(el, id);
     var removeOut = CSP.chan();
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([editing, remove]);
+      var result = yield CSP.alts([edits, remove]);
 
       if (remove === result.chan) {
         el.remove();
         yield CSP.put(removeOut, result.value);
         return;
-      }
-
-      if (result.value) {
-        if (isEditing) return;
+      } else if (edits === result.chan) {
         _startEditing();
-        isEditing = true;
-      } else {
-        if (!isEditing) return;
+        yield CSP.take(result.value);
         _stopEditing();
-        isEditing = false;
       }
     });
 
@@ -220,7 +213,8 @@ var app = app || {};
   }
 
   function editingEvents(todoItemEl) {
-    var start = app.helpers.domEvents(todoItemEl, 'dblclick');
+    var edits = CSP.chan();
+    var itemClicks = app.helpers.domEvents(todoItemEl, 'dblclick');
 
     var bodyClicks = app.helpers.domEvents($('html'), 'click');
     bodyClicks = CSP.removePull(bodyClicks, function(event) {
@@ -232,14 +226,17 @@ var app = app || {};
       return (event.keyCode === ENTER_KEY);
     });
 
-    var stop = CSP.merge([bodyClicks, enterPresses]);
+    CSP.goLoop(function*() {
+      yield CSP.take(itemClicks);
 
-    var out = CSP.merge([
-      CSP.mapPull(start, constantly(true)),
-      CSP.mapPull(stop, constantly(false))
-    ]);
+      var edit = CSP.go(function*() {
+        yield CSP.alts([bodyClicks, enterPresses]);
+      });
 
-    return CSP.unique(out);
+      yield CSP.put(edits, edit);
+    });
+
+    return edits;
   }
 
   function createFooterUI(el) {
