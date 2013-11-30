@@ -9,32 +9,51 @@ var app = app || {};
   var statsTemplate = _.template($('#stats-template').html());
 
   function createTodoAppUI(options) {
+    return new TodoAppUI(options);
+  }
+
+  function TodoAppUI(options) {
     var $el = $(options.el);
     var filters = options.filters;
     var controlFn = options.controlFn;
 
-    var $input = $el.find('#new-todo');
-    var $toggleAll = $el.find('#toggle-all');
-    var $list = $el.find('#todo-list');
-    var footer = createFooterUI($el.find('#footer'));
-    var currentFilter;
+    this.$input = $el.find('#new-todo');
+    this.$toggleAll = $el.find('#toggle-all');
+    this.$list = $el.find('#todo-list');
+    this._footer = createFooterUI($el.find('#footer'));
 
     var events = {
-      newTodo: listenForNewTodo($input),
-      toggleAll: listenForToggleAll($toggleAll),
-      clearCompleted: footer.clearCompleted,
+      newTodo: this._newTodoEvents(),
+      toggleAll: this._toggleAllEvents(),
+      clearCompleted: this._footer.clearCompleted,
       filter: filters
     };
 
-    var ui = {
-      createItem: _createItem,
-      setFilter: _setFilter,
-      updateStats: _updateStats,
-    };
+    controlFn(events, this);
+  }
 
-    controlFn(events, ui);
+  _.extend(TodoAppUI.prototype, {
+    _newTodoEvents: function() {
+      var events = app.helpers.domEvents(this.$input, 'keypress');
 
-    function _createItem(newItem) {
+      events = CSP.filterPull(events, function(event) {
+        return (event.keyCode === ENTER_KEY);
+      });
+
+      return CSP.mapPull(events, function(event) {
+        return $(event.currentTarget).val();
+      });
+    },
+
+    _toggleAllEvents: function() {
+      var events = app.helpers.domEvents(this.$toggleAll, 'click');
+
+      return CSP.mapPull(events, function(event) {
+        return $(event.currentTarget).prop('checked');
+      });
+    },
+
+    createItem: function(newItem) {
       var item = createTodoItemUI(newItem);
       var remove = CSP.chan();
 
@@ -49,47 +68,25 @@ var app = app || {};
       CSP.pipe(newItem.visible, item.events.visible);
       CSP.pipe(newItem.checked, item.events.checked);
 
-      $list.prepend(item.el);
-      $toggleAll.prop('checked', false);
-      $input.val('');
+      this.$list.prepend(item.el);
+      this.$toggleAll.prop('checked', false);
+      this.$input.val('');
 
       return remove;
-    }
+    },
 
-    function _setFilter(filter) {
-      footer.setFilter(filter);
-    }
+    setFilter: function(filter) {
+      this._footer.setFilter(filter);
+    },
 
-    function _updateStats(stats) {
+    updateStats: function(stats) {
       if (stats.completed === 0 && stats.remaining == 0) {
-        footer.hide();
+        this._footer.hide();
       } else {
-        footer.updateStats(stats);
+        this._footer.updateStats(stats);
       }
-    }
-
-    return ui;
-  }
-
-  function listenForNewTodo(newTodosEl) {
-    var events = app.helpers.domEvents(newTodosEl, 'keypress');
-
-    events = CSP.filterPull(events, function(event) {
-      return (event.keyCode === ENTER_KEY);
-    });
-
-    return CSP.mapPull(events, function(event) {
-      return $(event.currentTarget).val();
-    });
-  }
-
-  function listenForToggleAll(toggleAllEl) {
-    var events = app.helpers.domEvents(toggleAllEl, 'click');
-
-    return CSP.mapPull(events, function(event) {
-      return $(event.currentTarget).prop('checked');
-    });
-  }
+    },
+  });
 
   function createTodoItemUI(item) {
     var el = $(itemTemplate(item));
