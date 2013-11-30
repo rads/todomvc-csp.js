@@ -14,61 +14,51 @@ var app = app || {};
     var $toggleAll = $el.find('#toggle-all');
     var $list = $el.find('#todo-list');
     var footer = createFooterUI($el.find('#footer'));
+    var currentFilter;
 
-    var filterChan = CSP.chan();
-
-    var filter = null;
+    var filterOut = CSP.chan();
     var items = {};
 
     var events = {
       newTodo: listenForNewTodo($input),
       toggleAll: listenForToggleAll($toggleAll),
       clearCompleted: footer.clearCompleted,
-      filter: filterChan
+      filter: filterOut
     };
 
     var ui = {
-      createItems: _createItems,
-      deleteItems: _deleteItems,
-      setItemsStatus: _setItemsStatus,
+      createItem: _createItem,
+      deleteItem: _deleteItem,
       setFilter: _setFilter,
       hideFooter: _hideFooter,
       updateFooterStats: _updateFooterStats,
-      filter: filterChan
+      filter: filterOut
     };
 
     controlFn(events, ui);
 
-    function _createItems(newItems) {
-      createItems(items, newItems, $list, filter, events);
+    function _createItem(newItem) {
+      var item = items[newItem.id] = createTodoItemUI(newItem);
+      CSP.pipe(item.events.toggle, newItem.toggle);
+      CSP.pipe(item.events.remove, newItem.remove);
+      CSP.pipe(item.events.update, newItem.update);
+      CSP.pipe(newItem.visible, item.events.visible);
+      CSP.pipe(newItem.checked, item.events.checked);
+
+      $list.prepend(item.el);
       $toggleAll.prop('checked', false);
       $input.val('');
     }
 
-    function _deleteItems(ids) {
-      deleteItems(items, ids);
-    }
-
-    function _setItemsStatus(itms, completed) {
-      var item;
-
-      for (var i = 0, len = itms.length; i < len; i++) {
-        item = items[itms[i].id];
-
-        if (!item) {
-          createItems(items, [itms[i]], $list, filter, events);
-        } else if (isIgnoredItem(filter, itms[i])) {
-          deleteItems(items, [itms[i].id]);
-        } else {
-          item.setStatus(completed);
-        }
+    function _deleteItem(id) {
+      var item = items[id];
+      if (item) {
+        delete items[id];
+        item.el.remove();
       }
     }
 
-    function _setFilter(itms, filtr) {
-      filter = filtr;
-      deleteItems(items, _.keys(items));
-      createItems(items, itms, $list, filter, events);
+    function _setFilter(filter) {
       footer.setFilter(filter);
     }
 
@@ -81,36 +71,6 @@ var app = app || {};
     }
 
     return ui;
-  }
-
-  function deleteItems(itemsStore, ids) {
-    var item, i, len;
-    for (i = 0, len = ids.length; i < len; i++) {
-      item = itemsStore[ids[i]];
-      if (item) {
-        delete itemsStore[ids[i]];
-        item.el.remove();
-      }
-    }
-  }
-
-  function isIgnoredItem(filter, item) {
-    return (filter === 'completed' && !item.completed) ||
-           (filter === 'active' && item.completed);
-  }
-
-  function createItems(itemsStore, newItems, todoListEl, filter, events) {
-    var i, len, item;
-    for (i = 0, len = newItems.length; i < len; i++) {
-      if (isIgnoredItem(filter, newItems[i])) continue;
-
-      item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
-      CSP.pipe(item.events.toggle, newItems[i].toggle);
-      CSP.pipe(item.events.remove, newItems[i].remove);
-      CSP.pipe(item.events.update, newItems[i].update);
-
-      todoListEl.prepend(item.el);
-    }
   }
 
   function listenForNewTodo(newTodosEl) {
@@ -135,6 +95,7 @@ var app = app || {};
 
   function createTodoItemUI(item) {
     var el = $(itemTemplate(item));
+    el.addClass('hidden');
 
     if (item.completed) $(el).addClass('completed');
 
@@ -143,51 +104,41 @@ var app = app || {};
     var events = {
       update: CSP.chan(),
       toggle: app.helpers.domEvents(el, 'click', '.toggle'),
-      remove: CSP.chan()
+      remove: CSP.chan(),
+      visible: CSP.chan(),
+      checked: CSP.chan()
     };
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([edits, removeChan]);
+      var result = yield CSP.alts([
+        edits, removeChan, events.visible, events.checked
+      ]);
 
       if (removeChan === result.chan) {
-        _remove();
-        return;
+        el.remove();
+        yield CSP.put(events.remove, true);
+        return true;
       } else if (edits === result.chan) {
-        _startEditing();
+        el.addClass('editing');
+        el.find('.edit').select();
+
         yield CSP.take(result.value);
-        _stopEditing();
+
+        var title = el.find('.edit').val();
+        el.removeClass('editing');
+        el.find('label').text(title);
+
+        yield CSP.put(events.update, title);
+      } else if (events.visible === result.chan) {
+        el.toggleClass('hidden', result.value);
+      } else if (events.checked === result.chan) {
+        var completed = result.value;
+        el.find('.toggle').prop('checked', completed);
+        el.toggleClass('completed', completed);
       }
     });
 
-    function _setStatus(completed) {
-      el.find('.toggle').prop('checked', completed);
-      el.toggleClass('completed', completed);
-    }
-
-    function _startEditing() {
-      el.addClass('editing');
-      el.find('.edit').select();
-    }
-
-    function _stopEditing() {
-      var title = el.find('.edit').val();
-      el.removeClass('editing');
-      el.find('label').text(title);
-
-      CSP.putAsync(events.update, title);
-    }
-
-    function _remove() {
-      el.remove();
-      CSP.putAsync(events.remove, true);
-    }
-
-    return {
-      el: el,
-      setStatus: _setStatus,
-      remove: _remove,
-      events: events
-    };
+    return {el: el, events: events};
   }
 
   function editEvents(todoItemEl) {

@@ -3,113 +3,115 @@ var app = app || {};
 ;(function() {
   'use strict';
 
+  function isFiltered(filter, item) {
+    return (filter === 'completed' && !item.completed) ||
+           (filter === 'active' && item.completed);
+  }
+
   function createTodoApp(events, ui) {
     var e = events;
     var todos = {};
     var state = {todos: todos, counter: 0};
+    var clearMult = CSP.mult(events.clearCompleted);
+    var toggleAllMult = CSP.mult(events.toggleAll);
+    var filterMult = CSP.mult(events.filter);
+
+    var currentFilter;
+    var total = 0;
+    var completed = 0;
+
+    var filterStatusUpdates = CSP.chan();
+    CSP.tap(filterMult, filterStatusUpdates);
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([e.newTodo, e.toggleAll, e.clearCompleted,
-                                   e.filter]);
-      var sc = result.chan;
-      var val = result.value;
+      var result = yield CSP.alts([events.newTodo, filterStatusUpdates]);
 
-      if (e.newTodo === sc) {
-        newTodo(val, state);
-      } else if (e.toggleAll === sc) {
-        toggleAll(val);
-      } else if (e.clearCompleted === sc) {
-        clearCompleted();
-      } else if (e.filter === sc) {
-        filterTodos(val);
+      if (events.newTodo === result.chan) {
+        newTodo(result.value);
+      } else if (filterStatusUpdates === result.chan) {
+        currentFilter = result.value;
+        ui.setFilter(result.value);
       }
 
       updateFooter();
     });
 
-    function newTodo(title, state) {
+    function newTodo(title) {
       var id = state.counter++;
-      var remove = CSP.chan();
-      var toggle = CSP.chan();
-      var update = CSP.chan();
-
-      var todo = state.todos[id] = {
+      total++;
+      var todo = todos[id] = {
         id: id,
         title: title,
         completed: false,
-        remove: remove,
-        toggle: toggle,
-        update: update
+        remove: CSP.chan(),
+        toggle: CSP.chan(),
+        update: CSP.chan(),
+        visible: CSP.chan(),
+        checked: CSP.chan()
       };
 
-      CSP.goLoop(function*() {
-        var result = yield CSP.alts([remove, toggle, update]);
-        var todo;
+      var clearTap = CSP.chan();
+      CSP.tap(clearMult, clearTap);
+      var clear = CSP.filterPull(clearTap, function() {
+        return todo.completed;
+      });
 
-        if (remove === result.chan) {
+      var toggleAllTap = CSP.chan();
+      CSP.tap(toggleAllMult, toggleAllTap);
+      var toggleAll = CSP.filterPull(toggleAllTap, function(val) {
+        return (val !== todo.completed);
+      });
+
+      var filterTap = CSP.chan();
+      CSP.tap(filterMult, filterTap);
+      var filter = CSP.unique(CSP.mapPull(filterTap, function(val) {
+        return isFiltered(val, todo);
+      }));
+      CSP.pipe(filter, todo.visible);
+
+      CSP.goLoop(function*() {
+        var result = yield CSP.alts([
+          todo.remove, todo.toggle, toggleAll, todo.update, clear
+        ]);
+        var sc = result.chan;
+
+        var isRemove = (todo.remove === sc || clear === sc);
+        var isToggle = (todo.toggle === sc || toggleAll === sc);
+
+        if (isRemove) {
+          CSP.untap(clearMult, clearTap);
+          CSP.untap(toggleAllMult, toggleAllTap);
+          CSP.untap(filterMult, filterTap);
+
           delete todos[id];
-          ui.deleteItems([id]);
-        } else if (toggle === result.chan) {
-          todo = todos[id];
+          ui.deleteItem(id);
+          total--;
+          if (todo.completed) completed--;
+        } else if (isToggle) {
           todo.completed = !todo.completed;
-          ui.setItemsStatus([todo], todo.completed);
-        } else if (update === result.chan) {
-          todos[id].title = result.value;
+          todo.completed ? completed++ : completed--;
+          yield CSP.put(todo.checked, todo.completed);
+          yield CSP.put(filterTap, currentFilter);
+        } else if (events.update === sc) {
+          todo.title = result.value;
         }
 
         updateFooter();
-        if (remove === result.chan) return;
+
+        if (isRemove) return true;
       });
 
-      ui.createItems([todo]);
-    }
-
-    function findTodos(params) {
-      var vals = _.values(todos);
-      if (!_.isEmpty(params)) vals = _.where(vals, params);
-      return vals;
-    }
-
-    function toggleAll(completed) {
-      var selected = findTodos({completed: !completed});
-
-      _.each(selected, function(todo) {
-        todos[todo.id].completed = completed;
-      });
-
-      ui.setItemsStatus(selected, completed);
-    }
-
-    function clearCompleted() {
-      var completed = findTodos({completed: true});
-
-      _.each(completed, function(todo) {
-        delete todos[todo.id];
-      });
-
-      ui.deleteItems(_.pluck(completed, 'id'));
-    }
-
-    function filterTodos(filter) {
-      var params;
-      if (_.contains(['completed', 'active'], filter)) {
-        params = {completed: (filter === 'completed')};
-      } else {
-        params = {};
-      }
-
-      ui.setFilter(findTodos(params), filter);
+      CSP.putAsync(filterTap, currentFilter);
+      ui.createItem(todo);
     }
 
     function updateFooter() {
       if (_.isEmpty(todos)) {
         ui.hideFooter();
       } else {
-        var completed = findTodos({completed: true});
-
         ui.updateFooterStats({
-          remaining: _.size(todos) - _.size(completed),
-          completed: _.size(completed)
+          remaining: (total - completed),
+          completed: completed
         });
       }
     }
