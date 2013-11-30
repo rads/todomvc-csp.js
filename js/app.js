@@ -3,7 +3,7 @@ var app = app || {};
 ;(function() {
   'use strict';
 
-  function isFiltered(filter, item) {
+  function isFiltered(item, filter) {
     return (filter === 'completed' && !item.completed) ||
            (filter === 'active' && item.completed);
   }
@@ -29,7 +29,7 @@ var app = app || {};
         ui.setFilter(result.value);
       }
 
-      updateFooter();
+      updateStats();
     });
 
     function newTodo(title) {
@@ -59,9 +59,8 @@ var app = app || {};
 
       var filterTap = CSP.chan();
       CSP.tap(filterMult, filterTap);
-      var filter = CSP.unique(CSP.mapPull(filterTap, function(val) {
-        return isFiltered(val, todo);
-      }));
+      var filter = CSP.mapPull(filterTap, _.partial(isFiltered, todo));
+      filter = CSP.unique(filter);
       CSP.pipe(filter, todo.visible);
 
       CSP.putAsync(filterTap, currentFilter);
@@ -93,21 +92,17 @@ var app = app || {};
           todo.title = result.value;
         }
 
-        updateFooter();
+        updateStats();
 
         if (isRemove) return true;
       });
     }
 
-    function updateFooter() {
-      if (total === 0) {
-        ui.hideFooter();
-      } else {
-        ui.updateFooterStats({
-          remaining: (total - completed),
-          completed: completed
-        });
-      }
+    function updateStats() {
+      ui.updateStats({
+        remaining: (total - completed),
+        completed: completed
+      });
     }
   }
 

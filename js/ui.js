@@ -29,8 +29,7 @@ var app = app || {};
     var ui = {
       createItem: _createItem,
       setFilter: _setFilter,
-      hideFooter: _hideFooter,
-      updateFooterStats: _updateFooterStats,
+      updateStats: _updateStats,
     };
 
     controlFn(events, ui);
@@ -61,12 +60,12 @@ var app = app || {};
       footer.setFilter(filter);
     }
 
-    function _hideFooter() {
-      footer.hide();
-    }
-
-    function _updateFooterStats(stats) {
-      footer.updateStats(stats);
+    function _updateStats(stats) {
+      if (stats.completed === 0 && stats.remaining == 0) {
+        footer.hide();
+      } else {
+        footer.updateStats(stats);
+      }
     }
 
     return ui;
