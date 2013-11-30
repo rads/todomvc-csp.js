@@ -155,8 +155,7 @@ var app = app || {};
       var result = yield CSP.alts([edits, _remove]);
 
       if (_remove === result.chan) {
-        el.remove();
-        yield CSP.put(events.remove, result.value);
+        remove();
         return;
       } else if (edits === result.chan) {
         _startEditing();
@@ -184,7 +183,8 @@ var app = app || {};
     }
 
     function remove() {
-      CSP.putAsync(_remove, true);
+      el.remove();
+      CSP.putAsync(events.remove, true);
     }
 
     return {
