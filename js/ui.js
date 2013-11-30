@@ -94,7 +94,7 @@ var app = app || {};
       item = itemsStore[ids[i]];
       if (item) {
         delete itemsStore[ids[i]];
-        item.forceRemove();
+        item.remove();
       }
     }
   }
@@ -110,9 +110,9 @@ var app = app || {};
       if (isIgnoredItem(filter, newItems[i])) continue;
 
       item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
-      CSP.pipe(item.toggle, newItems[i].toggle);
-      CSP.pipe(item.remove, newItems[i].remove);
-      CSP.pipe(item.update, newItems[i].update);
+      CSP.pipe(item.events.toggle, newItems[i].toggle);
+      CSP.pipe(item.events.remove, newItems[i].remove);
+      CSP.pipe(item.events.update, newItems[i].update);
 
       todoListEl.prepend(item.el);
     }
@@ -144,22 +144,23 @@ var app = app || {};
     if (item.completed) $(el).addClass('completed');
 
     var edits = editEvents(el);
-    var update = CSP.chan();
-    var toggle = app.helpers.domEvents(el, 'click', '.toggle');
-    var remove = app.helpers.domEvents(el, 'click', '.destroy');
-    var removeOut = CSP.chan();
+    var _remove = app.helpers.domEvents(el, 'click', '.destroy');
+    var events = {
+      update: CSP.chan(),
+      toggle: app.helpers.domEvents(el, 'click', '.toggle'),
+      remove: CSP.chan()
+    };
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([edits, remove]);
+      var result = yield CSP.alts([edits, _remove]);
 
-      if (remove === result.chan) {
+      if (_remove === result.chan) {
         el.remove();
-        yield CSP.put(removeOut, result.value);
+        yield CSP.put(events.remove, result.value);
         return;
       } else if (edits === result.chan) {
         _startEditing();
         yield CSP.take(result.value);
-        debugger;
         _stopEditing();
       }
     });
@@ -179,20 +180,18 @@ var app = app || {};
       el.removeClass('editing');
       el.find('label').text(title);
 
-      CSP.putAsync(update, title);
+      CSP.putAsync(events.update, title);
     }
 
-    function forceRemove() {
-      CSP.putAsync(remove, true);
+    function remove() {
+      CSP.putAsync(_remove, true);
     }
 
     return {
       el: el,
       setStatus: _setStatus,
-      toggle: toggle,
-      remove: removeOut,
-      update: update,
-      forceRemove: forceRemove
+      remove: remove,
+      events: events
     };
   }
 
@@ -228,20 +227,18 @@ var app = app || {};
 
   function createFooterUI(el) {
     var $el = $(el);
-
-    var filter = null;
+    var currentFilter = null;
+    var clearCompleted = app.helpers.domEvents(el, 'click',
+      '#clear-completed');
 
     function _updateStats(stats) {
-      $el.
-        show().
-        html('').
-        append(statsTemplate(stats));
-      setSelectedFilterLink($el, filter);
+      $el.html(statsTemplate(stats)).show();
+      setSelectedFilterLink($el, currentFilter);
     }
 
-    function _setFilter(filtr) {
-      filter = filtr;
-      setSelectedFilterLink($el, filter);
+    function _setFilter(filter) {
+      currentFilter = filter;
+      setSelectedFilterLink($el, currentFilter);
     }
 
     function _hide() {
@@ -252,7 +249,7 @@ var app = app || {};
       updateStats: _updateStats,
       setFilter: _setFilter,
       hide: _hide,
-      clearCompleted: listenForClearCompleted($el)
+      clearCompleted: clearCompleted
     };
   }
 
@@ -260,10 +257,6 @@ var app = app || {};
     var filtersEl = footerEl.find('#filters');
     filtersEl.find('a').removeClass('selected');
     filtersEl.find('a[href="#/' + (filter || '') + '"]').addClass('selected');
-  }
-
-  function listenForClearCompleted(footerEl) {
-    return app.helpers.domEvents(footerEl, 'click', '#clear-completed');
   }
 
   app.ui = {
