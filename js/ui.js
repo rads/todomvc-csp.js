@@ -8,6 +8,117 @@ var app = app || {};
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
+  function createTodoApp(events, ui) {
+    var e = events;
+    var todos = {};
+    var state = {todos: todos, counter: 0};
+
+    CSP.goLoop(function*() {
+      var result = yield CSP.alts([
+        e.newTodo, e.toggleOne, e.toggleAll, e.clearCompleted,
+        e.updateTodo, e.filter
+      ]);
+      var sc = result.chan;
+      var val = result.value;
+
+      if (e.newTodo === sc) {
+        newTodo(val, state);
+      } else if (e.toggleOne === sc) {
+        toggleOne(val);
+      } else if (e.toggleAll === sc) {
+        toggleAll(val);
+      } else if (e.clearCompleted === sc) {
+        clearCompleted();
+      } else if (e.updateTodo === sc) {
+        updateTodo(val.id, val.title);
+      } else if (e.filter === sc) {
+        filterTodos(val);
+      }
+
+      updateFooter();
+    });
+
+    function newTodo(title, state) {
+      var id = state.counter++;
+      var remove = CSP.chan();
+
+      var todo = state.todos[id] = {
+        id: id,
+        title: title,
+        completed: false,
+        remove: remove
+      };
+
+      CSP.go(function*() {
+        yield CSP.take(remove);
+        deleteTodo(id);
+      });
+
+      ui.createItems([todo], true);
+    }
+
+    function deleteTodo(id) {
+      delete todos[id];
+      ui.deleteItems([id]);
+    }
+
+    function toggleOne(id) {
+      var todo = todos[id];
+      todo.completed = !todo.completed;
+
+      ui.setItemsStatus([todo], todo.completed);
+    }
+
+    function toggleAll(completed) {
+      var selected = _.where(_.values(todos), {completed: !completed});
+
+      _.each(selected, function(todo) {
+        todos[todo.id].completed = completed;
+      });
+
+      ui.setItemsStatus(selected, completed);
+    }
+
+    function clearCompleted() {
+      var completed = _.where(_.values(todos), {completed: true});
+
+      _.each(completed, function(todo) {
+        delete todos[todo.id];
+      });
+
+      ui.deleteItems(_.pluck(completed, 'id'));
+    }
+
+    function updateTodo(id, title) {
+      todos[id].title = title;
+    }
+
+    function filterTodos(filter) {
+      var selected = _.values(todos);
+
+      if (filter === 'completed' || filter === 'active') {
+        selected = _.where(selected, {
+          completed: (filter === 'completed')
+        });
+      }
+
+      ui.setFilter(selected, filter);
+    }
+
+    function updateFooter() {
+      if (_.isEmpty(todos)) {
+        ui.hideFooter();
+      } else {
+        var completed = _.where(_.values(todos), {completed: true});
+
+        ui.updateFooterStats({
+          remaining: _.size(todos) - _.size(completed),
+          completed: _.size(completed)
+        });
+      }
+    }
+  }
+
   function createTodoAppUI(el) {
     var $el = $(el);
     var $input = $el.find('#new-todo');
@@ -15,15 +126,39 @@ var app = app || {};
     var $list = $el.find('#todo-list');
     var footer = createFooterUI($el.find('#footer'));
 
-    var events = CSP.merge([
-      footer.events,
-      listenForNewTodo($input),
-      listenForToggleAll($toggleAll),
+    var toggleOne = CSP.chan();
+    var deleteTodo = CSP.chan();
+    var clearCompleted = CSP.merge([
+      footer.clearCompleted,
       listenForClearCompleted($list)
     ]);
+    var filterChan = CSP.chan();
+    var updateTodo = CSP.chan();
 
     var filter = null;
     var items = {};
+
+    var events = {
+      newTodo: listenForNewTodo($input),
+      toggleAll: listenForToggleAll($toggleAll),
+      clearCompleted: clearCompleted,
+      toggleOne: toggleOne,
+      deleteTodo: deleteTodo,
+      updateTodo: updateTodo,
+      filter: filterChan
+    };
+
+    var ui = {
+      createItems: _createItems,
+      deleteItems: _deleteItems,
+      setItemsStatus: _setItemsStatus,
+      setFilter: _setFilter,
+      hideFooter: _hideFooter,
+      updateFooterStats: _updateFooterStats,
+      filter: filterChan
+    };
+
+    createTodoApp(events, ui);
 
     function _createItems(newItems, clearInput) {
       if (typeof clearInput === 'undefined') clearInput = false;
@@ -71,15 +206,7 @@ var app = app || {};
       footer.updateStats(stats);
     }
 
-    return {
-      events: events,
-      createItems: _createItems,
-      deleteItems: _deleteItems,
-      setItemsStatus: _setItemsStatus,
-      setFilter: _setFilter,
-      hideFooter: _hideFooter,
-      updateFooterStats: _updateFooterStats
-    };
+    return ui;
   }
 
 
@@ -105,7 +232,10 @@ var app = app || {};
       if (isIgnoredItem(filter, newItems[i])) continue;
 
       item = itemsStore[newItems[i].id] = createTodoItemUI(newItems[i]);
-      CSP.pipe(item.events, events);
+      CSP.pipe(item.toggleOne, events.toggleOne);
+      CSP.pipe(item.deleteTodo, newItems[i].remove);
+      CSP.pipe(item.updateTodo, events.updateTodo);
+
       todoListEl.prepend(item.el);
     }
   }
@@ -118,10 +248,7 @@ var app = app || {};
     });
 
     return CSP.mapPull(events, function(event) {
-      return {
-        action: 'newTodo',
-        title: $(event.currentTarget).val()
-      };
+      return $(event.currentTarget).val();
     });
   }
 
@@ -129,10 +256,7 @@ var app = app || {};
     var events = app.helpers.domEvents(toggleAllEl, 'click');
 
     return CSP.mapPull(events, function(event) {
-      return {
-        action: 'toggleAll',
-        completed: $(event.currentTarget).prop('checked')
-      };
+      return $(event.currentTarget).prop('checked');
     });
   }
 
@@ -141,15 +265,11 @@ var app = app || {};
     var el = $(itemTemplate(item));
     var done = CSP.chan();
 
-    var events = CSP.merge([
-      listenForToggleOne(el, id),
-      listenForDeleteTodo(el, id)
-    ]);
-
     if (item.completed) $(el).addClass('completed');
 
     var editing = editingEvents(el);
     var isEditing = false;
+    var updateTodo = CSP.chan();
 
     CSP.goLoop(function*() {
       var result = yield CSP.alts([editing, done]);
@@ -183,35 +303,31 @@ var app = app || {};
       el.removeClass('editing');
       el.find('label').text(title);
 
-      CSP.putAsync(events, {
-        action: 'updateTodo',
+      CSP.putAsync(updateTodo, {
         id: id,
         title: title
       });
     }
 
     return {
-      events: events,
       el: el,
       delete: _delete,
-      setStatus: _setStatus
+      setStatus: _setStatus,
+      toggleOne: listenForToggleOne(el, id),
+      deleteTodo: listenForDeleteTodo(el, id),
+      updateTodo: updateTodo
     };
   }
 
   function listenForToggleOne(todoItemEl, id) {
     var events = app.helpers.domEvents(todoItemEl, 'click', '.toggle');
 
-    return CSP.mapPull(events, function(event) {
-      return {action: 'toggleOne', id: id};
-    });
+    return CSP.mapPull(events, constantly(id));
   }
 
   function listenForDeleteTodo(todoItemEl, id) {
     var events = app.helpers.domEvents(todoItemEl, 'click', '.destroy');
-
-    return CSP.mapPull(events, function(event) {
-      return {action: 'deleteTodo', id: id};
-    });
+    return CSP.mapPull(events, constantly(id));
   }
 
   function constantly(val) {
@@ -246,10 +362,6 @@ var app = app || {};
   function createFooterUI(el) {
     var $el = $(el);
 
-    var events = CSP.merge([
-      listenForClearCompleted($el)
-    ]);
-
     var filter = null;
 
     function _updateStats(stats) {
@@ -270,10 +382,10 @@ var app = app || {};
     }
 
     return {
-      events: events,
       updateStats: _updateStats,
       setFilter: _setFilter,
-      hide: _hide
+      hide: _hide,
+      clearCompleted: listenForClearCompleted($el)
     };
   }
 
@@ -284,11 +396,7 @@ var app = app || {};
   }
 
   function listenForClearCompleted(footerEl) {
-    var events = app.helpers.domEvents(footerEl, 'click', '#clear-completed');
-
-    return CSP.mapPull(events, function(event) {
-      return {action: 'clearCompleted'};
-    });
+    return app.helpers.domEvents(footerEl, 'click', '#clear-completed');
   }
 
   app.ui = {
