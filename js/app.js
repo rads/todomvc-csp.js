@@ -9,19 +9,15 @@ var app = app || {};
   }
 
   function createTodoApp(events, ui) {
-    var e = events;
-    var todos = {};
-    var state = {todos: todos, counter: 0};
     var clearMult = CSP.mult(events.clearCompleted);
     var toggleAllMult = CSP.mult(events.toggleAll);
     var filterMult = CSP.mult(events.filter);
+    var filterStatusUpdates = CSP.chan();
+    CSP.tap(filterMult, filterStatusUpdates);
 
     var currentFilter;
     var total = 0;
     var completed = 0;
-
-    var filterStatusUpdates = CSP.chan();
-    CSP.tap(filterMult, filterStatusUpdates);
 
     CSP.goLoop(function*() {
       var result = yield CSP.alts([events.newTodo, filterStatusUpdates]);
@@ -37,10 +33,9 @@ var app = app || {};
     });
 
     function newTodo(title) {
-      var id = state.counter++;
       total++;
-      var todo = todos[id] = {
-        id: id,
+
+      var todo = {
         title: title,
         completed: false,
         remove: CSP.chan(),
@@ -69,6 +64,9 @@ var app = app || {};
       }));
       CSP.pipe(filter, todo.visible);
 
+      CSP.putAsync(filterTap, currentFilter);
+      var removeUI = ui.createItem(todo);
+
       CSP.goLoop(function*() {
         var result = yield CSP.alts([
           todo.remove, todo.toggle, toggleAll, todo.update, clear
@@ -83,8 +81,7 @@ var app = app || {};
           CSP.untap(toggleAllMult, toggleAllTap);
           CSP.untap(filterMult, filterTap);
 
-          delete todos[id];
-          ui.deleteItem(id);
+          CSP.close(removeUI);
           total--;
           if (todo.completed) completed--;
         } else if (isToggle) {
@@ -100,13 +97,10 @@ var app = app || {};
 
         if (isRemove) return true;
       });
-
-      CSP.putAsync(filterTap, currentFilter);
-      ui.createItem(todo);
     }
 
     function updateFooter() {
-      if (_.isEmpty(todos)) {
+      if (total === 0) {
         ui.hideFooter();
       } else {
         ui.updateFooterStats({
@@ -118,15 +112,20 @@ var app = app || {};
   }
 
   function init() {
-    var ui = app.ui.createTodoAppUI($('#todoapp'), createTodoApp);
+    var filters = CSP.chan();
+    var ui = app.ui.createTodoAppUI({
+      el: $('#todoapp'),
+      controlFn: createTodoApp,
+      filters: filters
+    });
 
     var router = Router({
       '': function() {
-        CSP.putAsync(ui.filter, '');
+        CSP.putAsync(filters, '');
       },
 
       '/:filter': function(filter) {
-        CSP.putAsync(ui.filter, filter);
+        CSP.putAsync(filters, filter);
       }
     });
 
