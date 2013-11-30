@@ -61,7 +61,7 @@ var app = app || {};
         if (remove === result.chan) return;
       });
 
-      ui.createItems([todo], true);
+      ui.createItems([todo]);
     }
 
     function findTodos(params) {

@@ -39,15 +39,10 @@ var app = app || {};
 
     controlFn(events, ui);
 
-    function _createItems(newItems, clearInput) {
-      if (typeof clearInput === 'undefined') clearInput = false;
-
+    function _createItems(newItems) {
       createItems(items, newItems, $list, filter, events);
-
-      if (clearInput) {
-        $toggleAll.prop('checked', false);
-        $input.val('');
-      }
+      $toggleAll.prop('checked', false);
+      $input.val('');
     }
 
     function _deleteItems(ids) {
@@ -94,7 +89,7 @@ var app = app || {};
       item = itemsStore[ids[i]];
       if (item) {
         delete itemsStore[ids[i]];
-        item.remove();
+        item.el.remove();
       }
     }
   }
@@ -144,7 +139,7 @@ var app = app || {};
     if (item.completed) $(el).addClass('completed');
 
     var edits = editEvents(el);
-    var _remove = app.helpers.domEvents(el, 'click', '.destroy');
+    var removeChan = app.helpers.domEvents(el, 'click', '.destroy');
     var events = {
       update: CSP.chan(),
       toggle: app.helpers.domEvents(el, 'click', '.toggle'),
@@ -152,10 +147,10 @@ var app = app || {};
     };
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([edits, _remove]);
+      var result = yield CSP.alts([edits, removeChan]);
 
-      if (_remove === result.chan) {
-        remove();
+      if (removeChan === result.chan) {
+        _remove();
         return;
       } else if (edits === result.chan) {
         _startEditing();
@@ -182,7 +177,7 @@ var app = app || {};
       CSP.putAsync(events.update, title);
     }
 
-    function remove() {
+    function _remove() {
       el.remove();
       CSP.putAsync(events.remove, true);
     }
@@ -190,7 +185,7 @@ var app = app || {};
     return {
       el: el,
       setStatus: _setStatus,
-      remove: remove,
+      remove: _remove,
       events: events
     };
   }
