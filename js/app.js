@@ -13,9 +13,26 @@ var app = app || {};
     var filterStatusUpdates = CSP.chan();
     CSP.tap(globalEvents.filterMult, filterStatusUpdates);
 
+    var counter = 0;
     var currentFilter = {value: ''};
     var currentStats = {remaining: 0, completed: 0};
     var statsUpdates = CSP.chan();
+
+    CSP.putAsync(filters, currentFilter.value);
+
+    var items;
+    var storedItems = localStorage.getItem('items');
+    if (storedItems) {
+      items = JSON.parse(storedItems);
+    } else {
+      items = [];
+      localStorage.setItem('items', '[]');
+    }
+
+    _.each(items, function(id) {
+      var item = JSON.parse(localStorage.getItem(id));
+      newTodo(id, item.title, item.completed, true);
+    });
 
     CSP.goLoop(function*() {
       var result = yield CSP.alts([ui.events.newTodo, filterStatusUpdates,
@@ -24,13 +41,7 @@ var app = app || {};
       var val = result.value;
 
       if (ui.events.newTodo === sc) {
-        currentStats.remaining++;
-
-        var uiFn = _.bind(ui.createItem, ui);
-        var item = createTodoItem(val, currentFilter, globalEvents, uiFn);
-        CSP.pipe(item.stats, statsUpdates, false);
-
-        ui.updateStats(currentStats);
+        newTodo(app.helpers.uuid(), val, false, false);
       } else if (statsUpdates === sc) {
         applyStatsUpdate(result.value);
         ui.updateStats(currentStats);
@@ -39,6 +50,37 @@ var app = app || {};
         ui.setFilter(val);
       }
     });
+
+    function newTodo(id, title, completed, alreadyStored) {
+      completed ? currentStats.completed++ : currentStats.remaining++;
+
+      var uiFn = _.bind(ui.createItem, ui);
+      var item = createTodoItem(id, title, completed, currentFilter,
+                                globalEvents, uiFn);
+      CSP.pipe(item.stats, statsUpdates, false);
+
+      CSP.goLoop(function*() {
+        var result = yield CSP.alts([item.remove, item.update]);
+        var sc = result.chan;
+
+        if (item.remove === sc) {
+          localStorage.removeItem(id);
+          items = _.without(items, id);
+          localStorage.setItem('items', JSON.stringify(items));
+          return true;
+        } else if (item.update === sc) {
+          localStorage.setItem(id, JSON.stringify(result.value));
+        }
+      });
+
+      if (!alreadyStored) {
+        items.push(id);
+        localStorage.setItem('items', JSON.stringify(items))
+        localStorage.setItem(id, JSON.stringify(item.todo));
+      }
+
+      ui.updateStats(currentStats);
+    }
 
     function applyStatsUpdate(val) {
       if (val.action === 'toggled') {
@@ -55,14 +97,15 @@ var app = app || {};
     }
   }
 
-  function createTodoItem(title, currentFilter, globalEvents, uiFn) {
+  function createTodoItem(id, title, completed, currentFilter, globalEvents, uiFn) {
     var todo = {
       title: title,
-      completed: false,
+      completed: completed
     };
 
     var stats = CSP.chan();
     var ui = uiFn(todo);
+    ui.toggleChecked(todo.completed);
 
     var clearTap = CSP.chan();
     CSP.tap(globalEvents.clearMult, clearTap);
@@ -86,6 +129,9 @@ var app = app || {};
 
     CSP.putAsync(filterTap, currentFilter.value);
 
+    var remove = CSP.chan();
+    var update = CSP.chan();
+
     CSP.goLoop(function*() {
       var result = yield CSP.alts([ui.events.remove, ui.events.toggle,
                                    ui.events.edits, toggleAll, clear,
@@ -102,24 +148,34 @@ var app = app || {};
 
         yield CSP.put(stats, {action: 'removed', completed: todo.completed});
         CSP.close(stats);
+        CSP.close(remove);
+        CSP.close(update);
 
         ui.remove();
         return true;
       } else if (isToggle) {
         todo.completed = !todo.completed;
+        yield CSP.put(update, todo);
         yield CSP.put(stats, {action: 'toggled', completed: todo.completed});
+
         ui.toggleChecked(todo.completed);
         yield CSP.put(filterTap, currentFilter.value);
       } else if (ui.events.edits === sc) {
         ui.startEditing();
         yield CSP.take(result.value);
         todo.title = ui.stopEditing();
+        yield CSP.put(update, todo);
       } else if (visible === sc) {
         ui.toggleVisible(result.value);
       }
     });
 
-    return {stats: stats};
+    return {
+      stats: stats,
+      remove: remove,
+      update: update,
+      todo: todo
+    };
   }
 
   function init() {
