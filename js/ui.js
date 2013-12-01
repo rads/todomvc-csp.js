@@ -15,6 +15,7 @@ var app = app || {};
 
   function TodoAppUI(el) {
     var $el = $(el);
+    this.$main = $el.find('#main');
     this.$input = $el.find('#new-todo');
     this.$toggleAll = $el.find('#toggle-all');
     this.$list = $el.find('#todo-list');
@@ -67,23 +68,23 @@ var app = app || {};
     updateStats: function(stats) {
       if (stats.completed === 0 && stats.remaining == 0) {
         this._footer.hide();
+        this.$main.hide();
       } else {
         this._footer.updateStats(stats);
+        this.$main.show();
       }
+
+      this.$toggleAll.prop('checked', (stats.remaining === 0));
     },
   });
 
   function TodoItemUI(options) {
     var self = this;
     var item = options.item;
-    var $list = options.$list;
-
+    this.$list = options.$list;
     this.$el = $(itemTemplate(item));
-    this.$el.addClass('hidden');
 
     if (item.completed) this.$el.addClass('completed');
-
-    $list.prepend(this.$el);
 
     this.out = {
       remove: domEvents(this.$el, 'click', '.destroy'),
@@ -93,6 +94,10 @@ var app = app || {};
   }
 
   _.extend(TodoItemUI.prototype, {
+    append: function() {
+      this.$list.append(this.$el);
+    },
+
     _editEvents: function() {
       var self = this;
       var edits = CSP.chan();

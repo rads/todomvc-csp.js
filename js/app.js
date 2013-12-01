@@ -16,9 +16,12 @@ var app = app || {};
     var currentFilter = {value: ''};
     var currentStats = {remaining: 0, completed: 0};
     var statsUpdates = CSP.chan();
+    var firstFilter = CSP.chan();
 
-    _.each(app.storage.getItems(), function(item) {
-      newTodo(item, true);
+    CSP.takeAsync(firstFilter, function() {
+      _.each(app.storage.getItems(), function(item) {
+        newTodo(item, true);
+      });
     });
 
     CSP.goLoop(function*() {
@@ -38,6 +41,7 @@ var app = app || {};
         applyStatsUpdate(result.value);
         ui.updateStats(currentStats);
       } else if (filterStatusUpdates === sc) {
+        CSP.close(firstFilter);
         currentFilter.value = val;
         ui.setFilter(val);
       }
@@ -81,6 +85,12 @@ var app = app || {};
     }
   }
 
+  function isVisible(attrs, filter) {
+    return _.isEmpty(filter) ||
+      (filter === 'completed' && attrs.completed) ||
+      (filter === 'active' && !attrs.completed);
+  }
+
   function createTodoItem(attrs, currentFilter, globalEvents, ui) {
     ui.toggleChecked(attrs.completed);
 
@@ -98,13 +108,10 @@ var app = app || {};
 
     var filterTap = CSP.chan();
     CSP.tap(globalEvents.filterMult, filterTap);
-    var visible = CSP.unique(CSP.mapPull(filterTap, function(filter) {
-      return _.isEmpty(filter) ||
-             (filter === 'completed' && attrs.completed) ||
-             (filter === 'active' && !attrs.completed);
-    }));
+    var visible = CSP.unique(CSP.mapPull(filterTap, _.partial(isVisible, attrs)));
 
-    CSP.putAsync(filterTap, currentFilter.value);
+    ui.toggleVisible(isVisible(attrs, currentFilter.value));
+    ui.append();
 
     var out = {
       remove: CSP.chan(),
@@ -161,15 +168,15 @@ var app = app || {};
 
   function init() {
     var filters = CSP.chan();
-    var ui = app.ui.createTodoAppUI($('#todoapp'));
-    createTodoApp(filters, ui);
 
     var router = Router({
       '': function() { CSP.putAsync(filters, ''); },
       '/:filter': function(filter) { CSP.putAsync(filters, filter); }
     });
 
-    CSP.putAsync(filters, '');
+    var ui = app.ui.createTodoAppUI($('#todoapp'));
+    createTodoApp(filters, ui);
+
     router.init();
   }
 
