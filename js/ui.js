@@ -36,9 +36,11 @@ var app = app || {};
         return (event.keyCode === ENTER_KEY);
       });
 
-      return CSP.mapPull(events, function(event) {
-        return $(event.currentTarget).val();
+      events = CSP.mapPull(events, function(event) {
+        return $(event.currentTarget).val().trim();
       });
+
+      return CSP.removePull(events, _.isEmpty);
     },
 
     _toggleAllEvents: function() {
@@ -62,15 +64,14 @@ var app = app || {};
     },
 
     setFilter: function(filter) {
-      this._footer.setFilter(filter);
     },
 
-    updateStats: function(stats) {
+    update: function(stats, filter) {
       if (stats.completed === 0 && stats.remaining == 0) {
         this._footer.hide();
         this.$main.hide();
       } else {
-        this._footer.updateStats(stats);
+        this._footer.update(stats, filter);
         this.$main.show();
       }
 
@@ -118,9 +119,11 @@ var app = app || {};
 
       CSP.goLoop(function*() {
         yield CSP.take(labelClicks);
+        self._startEditing();
 
         var done = CSP.go(function*() {
           yield CSP.take(stops);
+          return self._stopEditing();
         });
 
         yield CSP.put(edits, done);
@@ -133,12 +136,12 @@ var app = app || {};
       this.$el.remove();
     },
 
-    startEditing: function() {
+    _startEditing: function() {
       this.$el.addClass('editing');
       this.$el.find('.edit').select();
     },
 
-    stopEditing: function() {
+    _stopEditing: function() {
       var title = this.$el.find('.edit').val();
       this.$el.removeClass('editing');
       this.$el.find('label').text(title);
@@ -158,18 +161,17 @@ var app = app || {};
   function FooterUI(el) {
     this.$el = $(el);
     this.clearCompleted = domEvents(el, 'click', '#clear-completed');
-    this._currentFilter = null;
+    this._filter = null;
+    this._stats = null;
   }
 
   _.extend(FooterUI.prototype, {
-    updateStats: function(stats) {
-      this.$el.html(statsTemplate(stats)).show();
+    update: function(stats, filter) {
+      this._stats = stats;
+      this._filter = filter;
+      this.$el.html(statsTemplate(stats));
       this._updateLinks();
-    },
-
-    setFilter: function(filter) {
-      this._currentFilter = filter;
-      this._updateLinks();
+      this.$el.show();
     },
 
     hide: function() {
@@ -177,10 +179,10 @@ var app = app || {};
     },
 
     _updateLinks: function() {
-      var $filters = this.$el.find('#filters');
-      $filters.find('a').removeClass('selected');
-      $filters.find('a[href="#/' + this._currentFilter + '"]').
-        addClass('selected');
+      this.$el.find('#filters li a')
+        .removeClass('selected')
+        .filter('[href="#/' + this._filter + '"]')
+        .addClass('selected');
     }
   });
 
