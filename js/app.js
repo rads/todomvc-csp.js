@@ -128,13 +128,8 @@ var app = app || {};
     createTodoApp(filters, ui);
 
     var router = Router({
-      '': function() {
-        CSP.putAsync(filters, '');
-      },
-
-      '/:filter': function(filter) {
-        CSP.putAsync(filters, filter);
-      }
+      '': function() { CSP.putAsync(filters, ''); },
+      '/:filter': function(filter) { CSP.putAsync(filters, filter); }
     });
 
     router.init();

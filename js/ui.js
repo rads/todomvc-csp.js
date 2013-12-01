@@ -3,10 +3,9 @@ var app = app || {};
 ;(function() {
   'use strict';
 
-  var domEvents = app.helpers.domEvents;
-
   var ENTER_KEY = 13;
 
+  var domEvents = app.helpers.domEvents;
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
@@ -16,7 +15,6 @@ var app = app || {};
 
   function TodoAppUI(el) {
     var $el = $(el);
-
     this.$input = $el.find('#new-todo');
     this.$toggleAll = $el.find('#toggle-all');
     this.$list = $el.find('#todo-list');
