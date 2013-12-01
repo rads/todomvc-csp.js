@@ -3,6 +3,8 @@ var app = app || {};
 ;(function() {
   'use strict';
 
+  var domEvents = app.helpers.domEvents;
+
   var ENTER_KEY = 13;
 
   var itemTemplate = _.template($('#item-template').html());
@@ -20,7 +22,7 @@ var app = app || {};
     this.$input = $el.find('#new-todo');
     this.$toggleAll = $el.find('#toggle-all');
     this.$list = $el.find('#todo-list');
-    this._footer = createFooterUI($el.find('#footer'));
+    this._footer = new FooterUI($el.find('#footer'));
 
     var events = {
       newTodo: this._newTodoEvents(),
@@ -29,12 +31,13 @@ var app = app || {};
       filter: filters
     };
 
-    controlFn(events, this);
+    var controls = controlFn(events, this);
+    this._itemControl = controls.itemControl;
   }
 
   _.extend(TodoAppUI.prototype, {
     _newTodoEvents: function() {
-      var events = app.helpers.domEvents(this.$input, 'keypress');
+      var events = domEvents(this.$input, 'keypress');
 
       events = CSP.filterPull(events, function(event) {
         return (event.keyCode === ENTER_KEY);
@@ -46,7 +49,7 @@ var app = app || {};
     },
 
     _toggleAllEvents: function() {
-      var events = app.helpers.domEvents(this.$toggleAll, 'click');
+      var events = domEvents(this.$toggleAll, 'click');
 
       return CSP.mapPull(events, function(event) {
         return $(event.currentTarget).prop('checked');
@@ -54,25 +57,16 @@ var app = app || {};
     },
 
     createItem: function(newItem) {
-      var item = createTodoItemUI(newItem);
-      var remove = CSP.chan();
-
-      CSP.go(function*() {
-        yield CSP.take(remove);
-        item.el.remove();
+      var item = new TodoItemUI({
+        $list: this.$list,
+        item: newItem,
+        controlFn: this._itemControl
       });
 
-      CSP.pipe(item.events.toggle, newItem.toggle);
-      CSP.pipe(item.events.remove, newItem.remove);
-      CSP.pipe(item.events.update, newItem.update);
-      CSP.pipe(newItem.visible, item.events.visible);
-      CSP.pipe(newItem.checked, item.events.checked);
-
-      this.$list.prepend(item.el);
       this.$toggleAll.prop('checked', false);
       this.$input.val('');
 
-      return remove;
+      return item;
     },
 
     setFilter: function(filter) {
@@ -88,117 +82,121 @@ var app = app || {};
     },
   });
 
-  function createTodoItemUI(item) {
-    var el = $(itemTemplate(item));
-    el.addClass('hidden');
+  function TodoItemUI(options) {
+    var self = this;
+    var item = options.item;
+    var controlFn = options.controlFn;
+    var $list = options.$list;
 
-    if (item.completed) $(el).addClass('completed');
+    this.$el = $(itemTemplate(item));
+    this.$el.addClass('hidden');
 
-    var edits = editEvents(el);
-    var removeChan = app.helpers.domEvents(el, 'click', '.destroy');
-    var events = {
-      update: CSP.chan(),
-      toggle: app.helpers.domEvents(el, 'click', '.toggle'),
-      remove: CSP.chan(),
-      visible: CSP.chan(),
-      checked: CSP.chan()
+    if (item.completed) this.$el.addClass('completed');
+
+    $list.prepend(this.$el);
+
+    this.events = {
+      pull: {
+        edits: this._editEvents()
+      },
+      push: {
+        remove: domEvents(this.$el, 'click', '.destroy'),
+        update: CSP.chan(),
+        toggle: domEvents(this.$el, 'click', '.toggle')
+      }
     };
 
-    CSP.goLoop(function*() {
-      var result = yield CSP.alts([
-        edits, removeChan, events.visible, events.checked
-      ]);
-
-      if (removeChan === result.chan) {
-        el.remove();
-        yield CSP.put(events.remove, true);
-        return true;
-      } else if (edits === result.chan) {
-        el.addClass('editing');
-        el.find('.edit').select();
-
-        yield CSP.take(result.value);
-
-        var title = el.find('.edit').val();
-        el.removeClass('editing');
-        el.find('label').text(title);
-
-        yield CSP.put(events.update, title);
-      } else if (events.visible === result.chan) {
-        el.toggleClass('hidden', result.value);
-      } else if (events.checked === result.chan) {
-        var completed = result.value;
-        el.find('.toggle').prop('checked', completed);
-        el.toggleClass('completed', completed);
-      }
-    });
-
-    return {el: el, events: events};
+    controlFn(this.events, this);
   }
 
-  function editEvents(todoItemEl) {
-    var edits = CSP.chan();
-    var itemClicks = app.helpers.domEvents(todoItemEl, 'dblclick');
-    itemClicks = CSP.removePull(itemClicks, function(event) {
-      return $(event.target).is('.destroy');
-    });
+  _.extend(TodoItemUI.prototype, {
+    _editEvents: function() {
+      var self = this;
+      var edits = CSP.chan();
+      var labelClicks = domEvents(this.$el, 'dblclick', 'label');
 
-    var bodyClicks = app.helpers.domEvents($('html'), 'click');
-    bodyClicks = CSP.removePull(bodyClicks, function(event) {
-      return $(event.target).closest(todoItemEl).length;
-    });
-
-    var enterPresses = app.helpers.domEvents(todoItemEl, 'keypress', '.edit');
-    enterPresses = CSP.filterPull(enterPresses, function(event) {
-      return (event.keyCode === ENTER_KEY);
-    });
-
-    CSP.goLoop(function*() {
-      yield CSP.take(itemClicks);
-
-      var done = CSP.go(function*() {
-        yield CSP.alts([bodyClicks, enterPresses]);
+      var outsideClicks = domEvents($('html'), 'click');
+      outsideClicks = CSP.removePull(outsideClicks, function(event) {
+        return $(event.target).closest(self.$el).length;
       });
 
-      yield CSP.put(edits, done);
-    });
+      var enterPresses = domEvents(this.$el, 'keypress', '.edit');
+      enterPresses = CSP.filterPull(enterPresses, function(event) {
+        return (event.keyCode === ENTER_KEY);
+      });
 
-    return edits;
+      var stops = CSP.chan(CSP.droppingBuffer(0));
+      CSP.pipe(CSP.merge([outsideClicks, enterPresses]), stops);
+
+      CSP.goLoop(function*() {
+        yield CSP.take(labelClicks);
+
+        var done = CSP.go(function*() {
+          yield CSP.take(stops);
+        });
+
+        yield CSP.put(edits, done);
+      });
+
+      return edits;
+    },
+
+    remove: function() {
+      this.$el.remove();
+    },
+
+    startEditing: function() {
+      this.$el.addClass('editing');
+      this.$el.find('.edit').select();
+    },
+
+    stopEditing: function() {
+      var title = this.$el.find('.edit').val();
+      this.$el.removeClass('editing');
+      this.$el.find('label').text(title);
+      return title;
+    },
+
+    toggleVisible: function(visible) {
+      this.$el.toggleClass('hidden', !visible);
+    },
+
+    toggleChecked: function(completed) {
+      this.$el.find('.toggle').prop('checked', completed);
+      this.$el.toggleClass('completed', completed);
+    }
+  });
+
+  function FooterUI(el) {
+    this.$el = $(el);
+    this.$filters = this.$el.find('#filters');
+    this.clearCompleted = domEvents(el, 'click', '#clear-completed');
+
+    this._currentFilter = null;
   }
 
-  function createFooterUI(el) {
-    var $el = $(el);
-    var currentFilter = null;
-    var clearCompleted = app.helpers.domEvents(el, 'click',
-      '#clear-completed');
+  _.extend(FooterUI.prototype, {
+    updateStats: function(stats) {
+      this.$el.html(statsTemplate(stats)).show();
+      this._updateLinks();
+    },
 
-    function _updateStats(stats) {
-      $el.html(statsTemplate(stats)).show();
-      setSelectedFilterLink($el, currentFilter);
+    setFilter: function(filter) {
+      this._currentFilter = filter;
+      this._updateLinks();
+    },
+
+    hide: function() {
+      this.$el.hide();
+    },
+
+    _updateLinks: function() {
+      this.$filters.find('a').removeClass('selected');
+      this.$filters.find('a[href="#/' + this._currentFilter + '"]').
+        addClass('selected');
     }
+  });
 
-    function _setFilter(filter) {
-      currentFilter = filter;
-      setSelectedFilterLink($el, currentFilter);
-    }
-
-    function _hide() {
-      return $el.hide();
-    }
-
-    return {
-      updateStats: _updateStats,
-      setFilter: _setFilter,
-      hide: _hide,
-      clearCompleted: clearCompleted
-    };
-  }
-
-  function setSelectedFilterLink(footerEl, filter) {
-    var filtersEl = footerEl.find('#filters');
-    filtersEl.find('a').removeClass('selected');
-    filtersEl.find('a[href="#/' + (filter || '') + '"]').addClass('selected');
-  }
 
   app.ui = {
     createTodoAppUI: createTodoAppUI

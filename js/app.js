@@ -38,11 +38,6 @@ var app = app || {};
       var todo = {
         title: title,
         completed: false,
-        remove: CSP.chan(),
-        toggle: CSP.chan(),
-        update: CSP.chan(),
-        visible: CSP.chan(),
-        checked: CSP.chan()
       };
 
       var clearTap = CSP.chan();
@@ -59,37 +54,43 @@ var app = app || {};
 
       var filterTap = CSP.chan();
       CSP.tap(filterMult, filterTap);
-      var filter = CSP.mapPull(filterTap, _.partial(isFiltered, todo));
-      filter = CSP.unique(filter);
-      CSP.pipe(filter, todo.visible);
+      var filter = CSP.unique(CSP.mapPull(filterTap, function(val) {
+        return !isFiltered(todo, val);
+      }));
+
+      var uiItem = ui.createItem(todo);
+      var uiItemPush = uiItem.events.push;
+      var uiItemPull = uiItem.events.pull;
 
       CSP.putAsync(filterTap, currentFilter);
-      var removeUI = ui.createItem(todo);
 
       CSP.goLoop(function*() {
         var result = yield CSP.alts([
-          todo.remove, todo.toggle, toggleAll, todo.update, clear
+          uiItemPush.remove, uiItemPush.toggle, uiItemPush.update,
+          toggleAll, clear, filter
         ]);
         var sc = result.chan;
 
-        var isRemove = (todo.remove === sc || clear === sc);
-        var isToggle = (todo.toggle === sc || toggleAll === sc);
+        var isRemove = (uiItemPush.remove === sc || clear === sc);
+        var isToggle = (uiItemPush.toggle === sc || toggleAll === sc);
 
         if (isRemove) {
           CSP.untap(clearMult, clearTap);
           CSP.untap(toggleAllMult, toggleAllTap);
           CSP.untap(filterMult, filterTap);
 
-          CSP.close(removeUI);
+          uiItem.remove();
           total--;
           if (todo.completed) completed--;
         } else if (isToggle) {
           todo.completed = !todo.completed;
           todo.completed ? completed++ : completed--;
-          yield CSP.put(todo.checked, todo.completed);
+          uiItem.toggleChecked(todo.completed);
           yield CSP.put(filterTap, currentFilter);
-        } else if (events.update === sc) {
+        } else if (uiItemPush.update === sc) {
           todo.title = result.value;
+        } else if (filter === sc) {
+          uiItem.toggleVisible(result.value);
         }
 
         updateStats();
@@ -104,6 +105,24 @@ var app = app || {};
         completed: completed
       });
     }
+
+    return {itemControl: createTodoItem};
+  }
+
+  function createTodoItem(events, ui) {
+    var pull = events.pull;
+    var push = events.push;
+
+    CSP.goLoop(function*() {
+      var result = yield CSP.alts([pull.edits]);
+      var sc = result.chan;
+
+      if (pull.edits === sc) {
+        ui.startEditing();
+        yield CSP.take(result.value);
+        yield CSP.put(push.update, ui.stopEditing());
+      }
+    });
   }
 
   function init() {
