@@ -20,7 +20,7 @@ var app = app || {};
     this.$list = $el.find('#todo-list');
     this._footer = new FooterUI($el.find('#footer'));
 
-    this.events = {
+    this.out = {
       newTodo: this._newTodoEvents(),
       toggleAll: this._toggleAllEvents(),
       clearCompleted: this._footer.clearCompleted,
@@ -85,7 +85,7 @@ var app = app || {};
 
     $list.prepend(this.$el);
 
-    this.events = {
+    this.out = {
       remove: domEvents(this.$el, 'click', '.destroy'),
       edits: this._editEvents(),
       toggle: domEvents(this.$el, 'click', '.toggle')

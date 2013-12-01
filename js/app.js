@@ -5,43 +5,35 @@ var app = app || {};
 
   function createTodoApp(filters, ui) {
     var globalEvents = {
-      clearMult: CSP.mult(ui.events.clearCompleted),
-      toggleAllMult: CSP.mult(ui.events.toggleAll),
+      clearMult: CSP.mult(ui.out.clearCompleted),
+      toggleAllMult: CSP.mult(ui.out.toggleAll),
       filterMult: CSP.mult(filters)
     };
 
     var filterStatusUpdates = CSP.chan();
     CSP.tap(globalEvents.filterMult, filterStatusUpdates);
 
-    var counter = 0;
     var currentFilter = {value: ''};
     var currentStats = {remaining: 0, completed: 0};
     var statsUpdates = CSP.chan();
 
-    CSP.putAsync(filters, currentFilter.value);
-
-    var items;
-    var storedItems = localStorage.getItem('items');
-    if (storedItems) {
-      items = JSON.parse(storedItems);
-    } else {
-      items = [];
-      localStorage.setItem('items', '[]');
-    }
-
-    _.each(items, function(id) {
-      var item = JSON.parse(localStorage.getItem(id));
-      newTodo(id, item.title, item.completed, true);
+    _.each(app.storage.getItems(), function(item) {
+      newTodo(item, true);
     });
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([ui.events.newTodo, filterStatusUpdates,
+      var result = yield CSP.alts([ui.out.newTodo, filterStatusUpdates,
                                    statsUpdates]);
       var sc = result.chan;
       var val = result.value;
 
-      if (ui.events.newTodo === sc) {
-        newTodo(app.helpers.uuid(), val, false, false);
+      if (ui.out.newTodo === sc) {
+        var attrs = {
+          id: app.helpers.uuid(),
+          title: val,
+          completed: false
+        };
+        newTodo(attrs, false);
       } else if (statsUpdates === sc) {
         applyStatsUpdate(result.value);
         ui.updateStats(currentStats);
@@ -51,34 +43,26 @@ var app = app || {};
       }
     });
 
-    function newTodo(id, title, completed, alreadyStored) {
-      completed ? currentStats.completed++ : currentStats.remaining++;
+    function newTodo(attrs, alreadyStored) {
+      attrs.completed ? currentStats.completed++ : currentStats.remaining++;
 
-      var uiFn = _.bind(ui.createItem, ui);
-      var item = createTodoItem(id, title, completed, currentFilter,
-                                globalEvents, uiFn);
-      CSP.pipe(item.stats, statsUpdates, false);
+      var itemUI = ui.createItem(attrs);
+      var item = createTodoItem(attrs, currentFilter, globalEvents, itemUI);
+      CSP.pipe(item.out.stats, statsUpdates, false);
 
       CSP.goLoop(function*() {
-        var result = yield CSP.alts([item.remove, item.update]);
+        var result = yield CSP.alts([item.out.remove, item.out.update]);
         var sc = result.chan;
 
-        if (item.remove === sc) {
-          localStorage.removeItem(id);
-          items = _.without(items, id);
-          localStorage.setItem('items', JSON.stringify(items));
+        if (item.out.remove === sc) {
+          app.storage.remove(attrs.id);
           return true;
-        } else if (item.update === sc) {
-          localStorage.setItem(id, JSON.stringify(result.value));
+        } else if (item.out.update === sc) {
+          app.storage.update(attrs.id, result.value);
         }
       });
 
-      if (!alreadyStored) {
-        items.push(id);
-        localStorage.setItem('items', JSON.stringify(items))
-        localStorage.setItem(id, JSON.stringify(item.todo));
-      }
-
+      if (!alreadyStored) app.storage.add(attrs.id, attrs);
       ui.updateStats(currentStats);
     }
 
@@ -97,85 +81,82 @@ var app = app || {};
     }
   }
 
-  function createTodoItem(id, title, completed, currentFilter, globalEvents, uiFn) {
-    var todo = {
-      title: title,
-      completed: completed
-    };
-
-    var stats = CSP.chan();
-    var ui = uiFn(todo);
-    ui.toggleChecked(todo.completed);
+  function createTodoItem(attrs, currentFilter, globalEvents, ui) {
+    ui.toggleChecked(attrs.completed);
 
     var clearTap = CSP.chan();
     CSP.tap(globalEvents.clearMult, clearTap);
     var clear = CSP.filterPull(clearTap, function() {
-      return todo.completed;
+      return attrs.completed;
     });
 
     var toggleAllTap = CSP.chan();
     CSP.tap(globalEvents.toggleAllMult, toggleAllTap);
     var toggleAll = CSP.filterPull(toggleAllTap, function(val) {
-      return (val !== todo.completed);
+      return (val !== attrs.completed);
     });
 
     var filterTap = CSP.chan();
     CSP.tap(globalEvents.filterMult, filterTap);
     var visible = CSP.unique(CSP.mapPull(filterTap, function(filter) {
       return _.isEmpty(filter) ||
-             (filter === 'completed' && todo.completed) ||
-             (filter === 'active' && !todo.completed);
+             (filter === 'completed' && attrs.completed) ||
+             (filter === 'active' && !attrs.completed);
     }));
 
     CSP.putAsync(filterTap, currentFilter.value);
 
-    var remove = CSP.chan();
-    var update = CSP.chan();
+    var out = {
+      remove: CSP.chan(),
+      update: CSP.chan(),
+      stats: CSP.chan()
+    };
 
     CSP.goLoop(function*() {
-      var result = yield CSP.alts([ui.events.remove, ui.events.toggle,
-                                   ui.events.edits, toggleAll, clear,
+      var result = yield CSP.alts([ui.out.remove, ui.out.toggle,
+                                   ui.out.edits, toggleAll, clear,
                                    visible]);
       var sc = result.chan;
 
-      var isRemove = (ui.events.remove === sc || clear === sc);
-      var isToggle = (ui.events.toggle === sc || toggleAll === sc);
+      var isRemove = (ui.out.remove === sc || clear === sc);
+      var isToggle = (ui.out.toggle === sc || toggleAll === sc);
 
       if (isRemove) {
         CSP.untap(globalEvents.clearMult, clearTap);
         CSP.untap(globalEvents.toggleAllMult, toggleAllTap);
         CSP.untap(globalEvents.filterMult, filterTap);
 
-        yield CSP.put(stats, {action: 'removed', completed: todo.completed});
-        CSP.close(stats);
-        CSP.close(remove);
-        CSP.close(update);
+        yield CSP.put(out.stats, {
+          action: 'removed',
+          completed: attrs.completed
+        });
+        CSP.close(out.stats);
+        CSP.close(out.remove);
+        CSP.close(out.update);
 
         ui.remove();
         return true;
       } else if (isToggle) {
-        todo.completed = !todo.completed;
-        yield CSP.put(update, todo);
-        yield CSP.put(stats, {action: 'toggled', completed: todo.completed});
+        attrs.completed = !attrs.completed;
+        yield CSP.put(out.update, attrs);
+        yield CSP.put(out.stats, {
+          action: 'toggled',
+          completed: attrs.completed
+        });
 
-        ui.toggleChecked(todo.completed);
+        ui.toggleChecked(attrs.completed);
         yield CSP.put(filterTap, currentFilter.value);
-      } else if (ui.events.edits === sc) {
+      } else if (ui.out.edits === sc) {
         ui.startEditing();
         yield CSP.take(result.value);
-        todo.title = ui.stopEditing();
-        yield CSP.put(update, todo);
+        attrs.title = ui.stopEditing();
+        yield CSP.put(out.update, attrs);
       } else if (visible === sc) {
         ui.toggleVisible(result.value);
       }
     });
 
-    return {
-      stats: stats,
-      remove: remove,
-      update: update,
-      todo: todo
-    };
+    return {out: out};
   }
 
   function init() {
@@ -188,6 +169,7 @@ var app = app || {};
       '/:filter': function(filter) { CSP.putAsync(filters, filter); }
     });
 
+    CSP.putAsync(filters, '');
     router.init();
   }
 
