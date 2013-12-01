@@ -10,29 +10,23 @@ var app = app || {};
   var itemTemplate = _.template($('#item-template').html());
   var statsTemplate = _.template($('#stats-template').html());
 
-  function createTodoAppUI(options) {
-    return new TodoAppUI(options);
+  function createTodoAppUI(el) {
+    return new TodoAppUI(el);
   }
 
-  function TodoAppUI(options) {
-    var $el = $(options.el);
-    var filters = options.filters;
-    var controlFn = options.controlFn;
+  function TodoAppUI(el) {
+    var $el = $(el);
 
     this.$input = $el.find('#new-todo');
     this.$toggleAll = $el.find('#toggle-all');
     this.$list = $el.find('#todo-list');
     this._footer = new FooterUI($el.find('#footer'));
 
-    var events = {
+    this.events = {
       newTodo: this._newTodoEvents(),
       toggleAll: this._toggleAllEvents(),
       clearCompleted: this._footer.clearCompleted,
-      filter: filters
     };
-
-    var controls = controlFn(events, this);
-    this._itemControl = controls.itemControl;
   }
 
   _.extend(TodoAppUI.prototype, {
@@ -59,8 +53,7 @@ var app = app || {};
     createItem: function(newItem) {
       var item = new TodoItemUI({
         $list: this.$list,
-        item: newItem,
-        controlFn: this._itemControl
+        item: newItem
       });
 
       this.$toggleAll.prop('checked', false);
@@ -85,7 +78,6 @@ var app = app || {};
   function TodoItemUI(options) {
     var self = this;
     var item = options.item;
-    var controlFn = options.controlFn;
     var $list = options.$list;
 
     this.$el = $(itemTemplate(item));
@@ -96,17 +88,10 @@ var app = app || {};
     $list.prepend(this.$el);
 
     this.events = {
-      pull: {
-        edits: this._editEvents()
-      },
-      push: {
-        remove: domEvents(this.$el, 'click', '.destroy'),
-        update: CSP.chan(),
-        toggle: domEvents(this.$el, 'click', '.toggle')
-      }
+      remove: domEvents(this.$el, 'click', '.destroy'),
+      edits: this._editEvents(),
+      toggle: domEvents(this.$el, 'click', '.toggle')
     };
-
-    controlFn(this.events, this);
   }
 
   _.extend(TodoItemUI.prototype, {
@@ -169,9 +154,7 @@ var app = app || {};
 
   function FooterUI(el) {
     this.$el = $(el);
-    this.$filters = this.$el.find('#filters');
     this.clearCompleted = domEvents(el, 'click', '#clear-completed');
-
     this._currentFilter = null;
   }
 
@@ -191,12 +174,12 @@ var app = app || {};
     },
 
     _updateLinks: function() {
-      this.$filters.find('a').removeClass('selected');
-      this.$filters.find('a[href="#/' + this._currentFilter + '"]').
+      var $filters = this.$el.find('#filters');
+      $filters.find('a').removeClass('selected');
+      $filters.find('a[href="#/' + this._currentFilter + '"]').
         addClass('selected');
     }
   });
-
 
   app.ui = {
     createTodoAppUI: createTodoAppUI
